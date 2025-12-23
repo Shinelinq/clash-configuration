@@ -99,6 +99,7 @@ function overwriteRules(params) {
     // 3.3 规则顺序 (Clash 匹配规则是从上到下的，命中即停，所以顺序极其重要！)
     // ✅【新增】本地 LAN 兜底：避免 LAN 远程 provider 拉取失败时，局域网流量掉进 MATCH/Proxy
     // ✅【保持】统一在 RULE-SET 行末尾加 no-resolve
+    // ✅【修改】ChinaMax 改为走策略组：RULE-SET,ChinaMax,ChinaMax
     const optimizedRules = [
         // ---- 本地 LAN 兜底（硬规则，不依赖远程）----
         "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
@@ -128,8 +129,8 @@ function overwriteRules(params) {
         "RULE-SET,Steam,Steam,no-resolve",
         
         "RULE-SET,GlobalMedia,GlobalMedia,no-resolve",
-        // 最后兜底：国内流量走直连
-        "RULE-SET,ChinaMax,DIRECT,no-resolve", 
+        // ✅ 最后兜底：国内流量走 ChinaMax 策略组（默认 DIRECT，可手动切）
+        "RULE-SET,ChinaMax,ChinaMax,no-resolve",
         // 漏网之鱼：上面都没匹配到的，全部走 Proxy
         "MATCH," + PROXY_NAME,
     ];
@@ -186,12 +187,15 @@ function overwriteProxyGroups(params) {
 
     // 4.3 生成规则集策略组 (对应 Section 0 的配置)
     // 比如生成一个叫 "Netflix" 的组，让你可以手动选是走 "Proxy" 还是 "香港"
+    // ✅【修改】LAN 组只保留 DIRECT 一个选项（只读指示灯）
     const ruleSetProxyGroups = Object.keys(RULE_CONFIG).map((ruleSetName) => {
         const defaultStrategy = RULE_CONFIG[ruleSetName];
         let proxies;
 
-        // 如果默认是 DIRECT，就把 DIRECT 放在第一个（默认选中）
-        if (defaultStrategy === "DIRECT") {
+        if (ruleSetName === "LAN") {
+            proxies = ["DIRECT"];
+        } else if (defaultStrategy === "DIRECT") {
+            // 如果默认是 DIRECT，就把 DIRECT 放在第一个（默认选中）
             proxies = ["DIRECT", PROXY_NAME, ...regionGroupNames];
         } else {
             // 否则默认选中 Proxy
@@ -276,7 +280,7 @@ function overwriteDns(params) {
 
         // ✅ 专门给代理服务器域名解析用，增强稳定性/防泄露
         "proxy-server-nameserver": cnDnsList,
-        // ✅【补齐】让 DNS 行为更贴近分流规则
+        // ✅ 让 DNS 行为更贴近分流规则
         "respect-rules": true,
 
         // 【核心高级功能】Nameserver Policy
