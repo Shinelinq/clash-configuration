@@ -9,97 +9,109 @@ const TEST_INTERVAL = 300; // 每 300 秒（5分钟）测一次，不至于把�
 const TEST_TOLERANCE = 50; // 容差 50ms，防止节点因为微小波动频繁切换
 
 // 规则集配置清单：这是你的“红绿灯”策略表
-// 左边是策略组名字，右边是默认策略 (DIRECT=直连, PROXY=走代理)
+// 左边是策略组名字，右边是默认策略 (DIRECT=直连, PROXY=走代理, REJECT=拒绝)
 const RULE_CONFIG = {
     // --- 默认直连组 (国内服务，不浪费流量) ---
-    "LAN": "DIRECT",        // 局域网
-    "ChinaMax": "DIRECT",   // 也就是 GeoSite CN，包含几乎所有国内域名
-    "SteamCN": "DIRECT",    // Steam 商店页面等国内部分
-    "BiliBili": "DIRECT",   // B站直连（除非你要看港澳台限定）
-    "Apple": "DIRECT",      // 苹果服务，国内通常直连更快
-    
-    // --- 默认代理组 (国外服务，必须翻墙) ---
-    "OpenAI": "PROXY",      // ChatGPT
-    "Netflix": "PROXY",     // 奶飞
-    "Disney": "PROXY",      // 迪士尼+
-    "TikTok": "PROXY",      // 国际版抖音
-    "Steam": "PROXY",       // Steam 社区/联机部分
-    "Telegram": "PROXY",    // 电报
-    "Google": "PROXY",      // 谷歌全家桶
-    "Microsoft": "PROXY",   // 微软 (有时需要代理加速)
-    "PayPal": "PROXY",      // 支付
-    "GlobalMedia": "PROXY"  // 其他国外流媒体
+    "LAN": "DIRECT",            // 局域网
+    "全球媒体": "PROXY",         // 原 GlobalMedia（改中文名）
+    "国内网站": "DIRECT",        // 原 ChinaMax（改中文名）
+    "广告拦截": "REJECT",
+    "OpenAI": "PROXY",          // ChatGPT
+    "Gemini": "PROXY",          // Google Gemini
+    "linux.do": "PROXY",        // 仅一条本地规则：DOMAIN-SUFFIX,linux.do
+    "GitHub": "PROXY",          // GitHub
+    "Google": "PROXY",
+    "SteamCN": "DIRECT",         // Steam 商店页面等国内部分
+    "Steam": "PROXY",
+    "PayPal": "PROXY",
 };
 
 // ================= 1. 主函数入口 (这是脚本的大脑) =================
+function getAllProxyNames(config) {
+    // 优先用 proxies
+    if (Array.isArray(config.proxies) && config.proxies.length) {
+        return config.proxies.map(p => p.name);
+    }
+    // 尝试从 proxy-providers 里抽（部分客户端会展开）
+    const providers = config["proxy-providers"] || {};
+    const names = [];
+    for (const key of Object.keys(providers)) {
+        const p = providers[key];
+        if (Array.isArray(p.proxies)) {
+            names.push(...p.proxies.map(x => x.name));
+        }
+    }
+    return [...new Set(names)];
+}
+
 // Clash Verge 启动时会把默认配置塞给 config，这个函数负责把 config 改造成你要的样子
 function main(config) {
-    // 安全检查：如果连节点都没有，还折腾啥？直接原路返回
-    if (!config.proxies || config.proxies.length === 0)
-        return config;
+    const allProxies = getAllProxyNames(config);
+    if (!allProxies.length) return config;
+
+    // 挂到 config 上供后续函数使用（兼容 provider 场景）
+    config._allProxyNames = allProxies;
 
     // 接下来像流水线一样加工配置，顺序很重要！
-    overwriteRules(config);       // 3. 搞定分流规则 (哪些域名走哪条路)
-    overwriteProxyGroups(config); // 4. 搞定策略组 (把节点分组，比如香港组、美国组)
-    overwriteDns(config);         // 5. 搞定 DNS (防止 DNS 污染，核心中的核心)
-    addCustomRules(config);       // 2. 插入你的私货 (最高优先级规则)
+    overwriteRules(config);       // 3. 搞定分流规则
+    overwriteProxyGroups(config); // 4. 搞定策略组
+    overwriteDns(config);         // 5. 搞定 DNS
+    addCustomRules(config);       // 2. 插入你的私货
 
-    return config; // 把改好的配置交还给内核
+    return config;
 }
 
 // ================= 2. 自定义规则 (这是 VIP 快速通道) =================
 function addCustomRules(config) {
     const customRules = [
-        // 示例：在这里写的规则会插在最前面，优先级最高
-        // 如果你想强制 notion 走美国，就在这写
-        // "RULE-SET,Google,🇺🇸 United States",
+        // ✅ linux.do：本地单条规则（最高优先级）
+        "DOMAIN-SUFFIX,linux.do,linux.do",
     ];
-    // 把你的私货放到原有规则列表的头部
     config["rules"] = [...customRules, ...config["rules"]];
 }
 
-// ================= 3. 覆写规则 & Providers (这是你的“外包团队”) =================
+// ================= 3. 覆写规则 & Providers =================
 function overwriteRules(params) {
-    // 3.1 规则集 URL 映射表：这里引用了 blackmatrix7 大佬维护的规则文件
-    // 它们包含了成千上万条域名，不用你自己手写
     const ruleUrlMap = {
         "LAN": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Lan/Lan_No_Resolve.yaml",
-        "ChinaMax": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
+
+        // 原 ChinaMax -> 改名：国内网站
+        "国内网站": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
+
         "SteamCN": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/SteamCN/SteamCN_No_Resolve.yaml",
-        "BiliBili": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/BiliBili/BiliBili_No_Resolve.yaml",
-        "Apple": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Apple/Apple_Classical_No_Resolve.yaml",
         "OpenAI": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/OpenAI/OpenAI_No_Resolve.yaml",
-        "Netflix": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Netflix/Netflix_No_Resolve.yaml",
-        "Disney": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Disney/Disney_No_Resolve.yaml",
-        "TikTok": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/TikTok/TikTok_No_Resolve.yaml",
-        "Steam": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam_No_Resolve.yaml",
-        "Telegram": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Telegram/Telegram_No_Resolve.yaml",
+
+        // ✅ Gemini（No_Resolve 版本）
+        "Gemini": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Gemini/Gemini_No_Resolve.yaml",
+
+        // ✅ GitHub（No_Resolve 版本）
+        "GitHub": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/GitHub/GitHub_No_Resolve.yaml",
+
         "Google": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Google/Google_No_Resolve.yaml",
-        "Microsoft": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Microsoft/Microsoft_No_Resolve.yaml",
         "PayPal": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/PayPal/PayPal_No_Resolve.yaml",
-        "GlobalMedia": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml",
+        "Steam": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam_No_Resolve.yaml",
+
+        // 原 GlobalMedia -> 改名：全球媒体
+        "全球媒体": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml",
+
+        // ✅ 广告拦截：最稳妥用 Classical_No_Resolve
+        "广告拦截": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite_Classical_No_Resolve.yaml",
     };
-    
-    // 3.2 生成 Rule Providers 配置对象
-    // 这段循环会把上面的 URL 转换成 Clash 能读懂的 provider 格式
+
     const generatedProviders = {};
-    Object.keys(RULE_CONFIG).forEach(key => {
+    Object.keys(RULE_CONFIG).forEach((key) => {
         if (ruleUrlMap[key]) {
             generatedProviders[key] = {
                 type: "http",
                 behavior: "classical",
                 url: ruleUrlMap[key],
-                path: `./ruleset/${key}.yaml`, // 规则文件下载后存到本地这里
-                interval: 86400, // 24小时更新一次规则
-                format: "yaml"
+                path: `./ruleset/${key}.yaml`,
+                interval: 86400,
+                format: "yaml",
             };
         }
     });
 
-    // 3.3 规则顺序 (Clash 匹配规则是从上到下的，命中即停，所以顺序极其重要！)
-    // ✅【新增】本地 LAN 兜底：避免 LAN 远程 provider 拉取失败时，局域网流量掉进 MATCH/Proxy
-    // ✅【保持】统一在 RULE-SET 行末尾加 no-resolve
-    // ✅【保持】ChinaMax 走策略组：RULE-SET,ChinaMax,ChinaMax
     const optimizedRules = [
         // ---- 本地 LAN 兜底（硬规则，不依赖远程）----
         "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
@@ -110,77 +122,57 @@ function overwriteRules(params) {
         "DOMAIN-SUFFIX,local,DIRECT",
         "DOMAIN-SUFFIX,lan,DIRECT",
 
-        // 先判断局域网，不走流量
         "RULE-SET,LAN,DIRECT,no-resolve",
-        // 再判断国内应用（SteamCN, B站等），让它们直连
-        "RULE-SET,SteamCN,SteamCN,no-resolve", 
-        "RULE-SET,BiliBili,BiliBili,no-resolve",
-        "RULE-SET,Apple,Apple,no-resolve", 
-
-        // 然后是必须要走代理的国外应用
+        "RULE-SET,广告拦截,广告拦截,no-resolve",
         "RULE-SET,OpenAI,OpenAI,no-resolve",
-        "RULE-SET,Netflix,Netflix,no-resolve",
-        "RULE-SET,Disney,Disney,no-resolve",
-        "RULE-SET,TikTok,TikTok,no-resolve",
-        "RULE-SET,Telegram,Telegram,no-resolve",
+        "RULE-SET,Gemini,Gemini,no-resolve",
+        "RULE-SET,GitHub,GitHub,no-resolve",
         "RULE-SET,Google,Google,no-resolve",
-        "RULE-SET,Microsoft,Microsoft,no-resolve",
         "RULE-SET,PayPal,PayPal,no-resolve",
+        "RULE-SET,SteamCN,SteamCN,no-resolve",
         "RULE-SET,Steam,Steam,no-resolve",
-        
-        "RULE-SET,GlobalMedia,GlobalMedia,no-resolve",
-        // 国内流量走 ChinaMax 策略组（默认 DIRECT，可手动切）
-        "RULE-SET,ChinaMax,ChinaMax,no-resolve",
-        // 漏网之鱼：上面都没匹配到的，全部走 Proxy
+        "RULE-SET,全球媒体,全球媒体,no-resolve",
+        "RULE-SET,国内网站,国内网站,no-resolve",
         "MATCH," + PROXY_NAME,
     ];
 
-    // 3.4 安全合并：把新生成的 provider 和 rules 塞回配置里
-    params["rule-providers"] = { 
-        ...(params["rule-providers"] || {}), 
-        ...generatedProviders 
+    params["rule-providers"] = {
+        ...(params["rule-providers"] || {}),
+        ...generatedProviders,
     };
     params["rules"] = optimizedRules;
 }
 
-// ================= 4. 覆写代理组 (修正正则 & 加入 lazy: true) =================
+// ================= 4. 覆写代理组 =================
 function overwriteProxyGroups(params) {
-    // 拿到所有节点的名字列表
-    const allProxies = params["proxies"].map((e) => e.name);
+    // ✅ 兼容 provider：优先用 main() 里整理出来的名字
+    const allProxies = params._allProxyNames || (params["proxies"] || []).map((e) => e.name);
 
-    // 4.1 地区正则 (重点！！)
-    // 这里定义了如何通过名字筛选节点
-    // ✅【修改】仅保留最常用的四个地区：HK / SG / JP / US
+    // 4.1 地区正则（加入 . 和 @ 作为常见分隔符，避免一些命名导致边界断不开）
     const regionFilterRegexs = [
-         // 🇭🇰 Hong Kong
-        { name: "🇭🇰 Hong Kong", regex: /香港|Hong\s*Kong|HongKong|🇭🇰|HK(\d+)?|HKG/i },
-        { name: "🇸🇬 Singapore", regex: /新加坡|狮城|Singapore|🇸🇬|SG(\d+)?|SGP(\d+)?|SIN/i },
-        { name: "🇯🇵 Japan", regex: /日本|Japan|🇯🇵|JP(\d+)?|JPN/i },
-        { name: "🇺🇸 United States", regex: /美国|United\s*States|America|🇺🇸|US(\d+)?|USA/i },
+        { name: "🇭🇰 Hong Kong", regex: /香港|Hong[-\s_]*Kong|HongKong|🇭🇰|HKG|HK(\d+)?/i },
+        { name: "🇸🇬 Singapore", regex: /新加坡|狮城|Singapore|🇸🇬|SIN|SGP|SG(\d+)?/i },
+        { name: "🇯🇵 Japan", regex: /日本|Japan|🇯🇵|JPN|JP(\d+)?/i },
+        { name: "🇺🇸 United States", regex: /美国|United\s*States|America|🇺🇸|USA|US(\d+)?/i },
     ];
 
-    // 4.2 生成地区测速组
     const regionProxyGroups = regionFilterRegexs
         .map((item) => {
-            // 用正则把节点挑出来
             const proxies = getProxiesByRegex(params, item.regex);
             return {
                 name: item.name,
-                type: "url-test", // 自动测速，选延迟最低的
+                type: "url-test",
                 url: TEST_URL,
                 interval: TEST_INTERVAL,
                 tolerance: TEST_TOLERANCE,
                 proxies,
-                lazy: true, // 【性能优化点】只有当这个组被使用时才测速，平时休眠，省电省流量
+                lazy: true,
             };
         })
-        .filter((item) => item.proxies.length > 0); // 如果某个地区没节点，就不生成这个组
+        .filter((item) => item.proxies.length > 0);
 
     const regionGroupNames = regionProxyGroups.map((g) => g.name);
 
-    // 4.3 生成规则集策略组 (对应 Section 0 的配置)
-    // 比如生成一个叫 "Netflix" 的组，让你可以手动选是走 "Proxy" 还是 "香港"
-    // ✅【保持】LAN 组只保留 DIRECT 一个选项（只读指示灯）
     const ruleSetProxyGroups = Object.keys(RULE_CONFIG).map((ruleSetName) => {
         const defaultStrategy = RULE_CONFIG[ruleSetName];
         let proxies;
@@ -188,21 +180,16 @@ function overwriteProxyGroups(params) {
         if (ruleSetName === "LAN") {
             proxies = ["DIRECT"];
         } else if (defaultStrategy === "DIRECT") {
-            // 如果默认是 DIRECT，就把 DIRECT 放在第一个（默认选中）
             proxies = ["DIRECT", PROXY_NAME, ...regionGroupNames];
+        } else if (defaultStrategy === "REJECT") {
+            proxies = ["REJECT", "DIRECT", PROXY_NAME, ...regionGroupNames];
         } else {
-            // 否则默认选中 Proxy
             proxies = [PROXY_NAME, ...regionGroupNames, "DIRECT"];
         }
 
-        return {
-            name: ruleSetName,
-            type: "select", // 手动选择模式
-            proxies,
-        };
+        return { name: ruleSetName, type: "select", proxies };
     });
 
-    // 4.4 全局自动测速组 (所有节点大乱斗)
     const autoSelect = {
         name: "🌏 Auto",
         type: "url-test",
@@ -210,33 +197,29 @@ function overwriteProxyGroups(params) {
         interval: TEST_INTERVAL,
         tolerance: TEST_TOLERANCE,
         proxies: [...allProxies],
-        lazy: true, // 同样开启 lazy，防止后台疯狂测速
+        lazy: true,
     };
 
-    // 主代理组：包括自动选择、各个地区组、所有节点
     const proxyGroup = {
         name: PROXY_NAME,
         type: "select",
         proxies: ["🌏 Auto", ...regionGroupNames, ...allProxies, "DIRECT"],
     };
 
-    // 4.5 写入配置
     params["proxy-groups"] = [
         proxyGroup,
         autoSelect,
         ...ruleSetProxyGroups,
-        ...regionProxyGroups
+        ...regionProxyGroups,
     ];
 }
 
 // ================= 5. 覆写 DNS (最终安全版 - 防止 DNS 泄露) =================
 function overwriteDns(params) {
-    // 国内 DNS：阿里和腾讯，解析国内快
     const cnDnsList = [
-        "223.5.5.5", "223.6.6.6", 
+        "223.5.5.5", "223.6.6.6",
         "119.29.29.29", "119.28.28.28",
     ];
-    // 国外 DNS：DoH (DNS over HTTPS)，加密查询，防止污染
     const trustDnsList = [
         "https://cloudflare-dns.com/dns-query",
         "https://dns.google/dns-query",
@@ -246,50 +229,43 @@ function overwriteDns(params) {
 
     const dnsOptions = {
         "enable": true,
-        "ipv6": false, // 目前 IPv6 在代理环境下坑多，关掉保平安
+        "ipv6": false,
         "prefer-h3": true,
-        
-        // Fake-IP 模式：返回假 IP 给软件，实现秒连，后续由 Clash 远程解析域名
-        "enhanced-mode": "fake-ip", 
+
+        "enhanced-mode": "fake-ip",
         "fake-ip-range": "198.18.0.1/16",
-        
-        // 甚至不给这些域名返回 Fake-IP，强制它们用真 IP (通常是为了兼容性)
+
         "fake-ip-filter": [
             "*.lan",
             "*.local",
             "localhost",
             "localhost.*",
-            "router.asus.com", 
+            "router.asus.com",
             "dns.msftncsi.com",
             "www.msftconnecttest.com",
             "time.*",
             "ntp.*",
-            "id.qq.com", 
+            "id.qq.com",
         ],
 
-        // 默认 DNS (Fallback 用，或者非策略匹配时用)
-        "default-nameserver": ["223.5.5.5", "119.29.29.29"], 
-        "nameserver": trustDnsList, 
+        "default-nameserver": ["223.5.5.5", "119.29.29.29"],
+        "nameserver": trustDnsList,
 
-        // ✅ 专门给代理服务器域名解析用，增强稳定性/防泄露
         "proxy-server-nameserver": cnDnsList,
-        // ✅ 让 DNS 行为更贴近分流规则
         "respect-rules": true,
 
-        // 【核心高级功能】Nameserver Policy
         "nameserver-policy": {
             "geosite:cn": cnDnsList,
             "geosite:geolocation-!cn": trustDnsList,
         },
     };
 
-    // GEO 资源加速：把 geoip/geosite 数据库换成国内 GitHub 镜像地址，下载更快
     const rawGeoxURLs = {
         "geoip": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip-lite.dat",
         "geosite": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat",
         "mmdb": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country-lite.mmdb",
     };
-    const githubPrefix = "https://fastgh.lainbo.com/"; // 加速前缀
+    const githubPrefix = "https://fastgh.lainbo.com/";
     const accelURLs = Object.fromEntries(
         Object.entries(rawGeoxURLs).map(([key, githubUrl]) => [
             key, `${githubPrefix}${githubUrl}`,
@@ -297,12 +273,18 @@ function overwriteDns(params) {
     );
 
     const otherOptions = {
-        "unified-delay": true, // 统一延迟计算
-        "tcp-concurrent": true, // TCP 并发，快一点是一点
-        "profile": { "store-selected": true, "store-fake-ip": true }, // 记住你上次选的节点
-        "sniffer": { "enable": true, "sniff": { "TLS": { "ports": [443, 8443] }, "HTTP": { "ports": [80, "8080-8880"], "override-destination": true } } },
-        "geodata-mode": true, // 开启新版 geodata 模式
-        "geox-url": accelURLs, // 应用加速地址
+        "unified-delay": true,
+        "tcp-concurrent": true,
+        "profile": { "store-selected": true, "store-fake-ip": true },
+        "sniffer": {
+            "enable": true,
+            "sniff": {
+                "TLS": { "ports": [443, 8443] },
+                "HTTP": { "ports": [80, "8080-8880"], "override-destination": true }
+            }
+        },
+        "geodata-mode": true,
+        "geox-url": accelURLs,
     };
 
     params.dns = { ...params.dns, ...dnsOptions };
@@ -311,8 +293,6 @@ function overwriteDns(params) {
 
 // ================= 辅助函数 =================
 function getProxiesByRegex(params, regex) {
-    // 简单的过滤器：给我配置里的所有节点 -> 只要名字符合正则的 -> 返回名字列表
-    return params.proxies
-        .filter((e) => e.name.match(regex))
-        .map((e) => e.name);
+    const names = params._allProxyNames || (params.proxies || []).map((e) => e.name);
+    return names.filter((name) => regex.test(name));
 }
