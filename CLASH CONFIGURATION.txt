@@ -1,38 +1,94 @@
-// ================= 0. 全局常量定义 (这是你的“战术指挥中心”) =================
+// =============================================================================
+// 0) 全局常量区：统一的“配置开关 + 策略字典”
+//    目标：把所有可调参数集中在顶部，后续逻辑只引用这里，避免散落硬编码。
+// =============================================================================
 
-// 代理总出口名称：所有的规则没匹配到的，或者选了 PROXY 的，最后都流向这里
+// 默认总出口策略组名：
+// - 规则未命中时（MATCH）会走这里
+// - 规则组选择 PROXY 时也会最终指向这里
 const PROXY_NAME = "Proxy";
 
-// 测速设置：这是给节点“体检”的标准
-const TEST_URL = "https://cp.cloudflare.com/generate_204"; // 经典的 CF 测速地址，轻量
-const TEST_INTERVAL = 300; // 每 300 秒（5分钟）测一次，不至于把机场跑崩
-const TEST_TOLERANCE = 50; // 容差 50ms，防止节点因为微小波动频繁切换
+// 节点测速参数：用于 url-test / Auto 组的健康检查
+// TEST_URL：轻量 204 返回，适合作为连通性与延迟探测
+// TEST_INTERVAL：测速周期（秒），过短会给机场/客户端造成压力
+// TEST_TOLERANCE：容差（ms），避免因轻微抖动导致频繁切换
+const TEST_URL = "https://cp.cloudflare.com/generate_204";
+const TEST_INTERVAL = 600;
+const TEST_TOLERANCE = 50;
 
-// 规则集配置清单：这是你的“红绿灯”策略表
-// 左边是策略组名字，右边是默认策略 (DIRECT=直连, PROXY=走代理, REJECT=拒绝)
+// 规则策略配置表：
+// key   = 规则分组名称（必须与 rule-provider / proxy-group 名称保持一致）
+// value = 默认策略：
+//   DIRECT -> 默认直连（国内/局域网/不值得代理的流量）
+//   PROXY  -> 默认走代理（需要加速/不可直连）
+//   REJECT -> 默认拦截（广告等）
+//
+// 注意：这里只定义“默认行为”，真正分流规则在 overwriteRules() 中生成。
 const RULE_CONFIG = {
-    // --- 默认直连组 (国内服务，不浪费流量) ---
     "LAN": "DIRECT",            // 局域网
-    "全球媒体": "PROXY",         // 原 GlobalMedia（改中文名）
-    "国内网站": "DIRECT",        // 原 ChinaMax（改中文名）
-    "广告拦截": "REJECT",
-    "OpenAI": "PROXY",          // ChatGPT
-    "Gemini": "PROXY",          // Google Gemini
-    "linux.do": "PROXY",        // 仅一条本地规则：DOMAIN-SUFFIX,linux.do
+    "国内网站": "DIRECT",        // 国内站点集合（ChinaMax 改名）
+    "全球媒体": "PROXY",         // 海外媒体集合（GlobalMedia 改名）
+    "广告拦截": "REJECT",        // 广告/追踪域名集合
+    "OpenAI": "PROXY",          // ChatGPT / OpenAI 相关
+    "Gemini": "PROXY",          // Google Gemini 相关
+    "linux.do": "PROXY",        // 本地自定义域名（仅 1 条单独规则）
     "GitHub": "PROXY",          // GitHub
-    "Google": "PROXY",
-    "SteamCN": "DIRECT",         // Steam 商店页面等国内部分
-    "Steam": "PROXY",
-    "PayPal": "PROXY",
+    "Google": "PROXY",          // Google
+    "SteamCN": "DIRECT",        // Steam 国内部分（商店/国区相关）
+    "Steam": "PROXY",           // Steam 国际/社区等
+    "PayPal": "PROXY",          // PayPal
 };
 
-// ================= 1. 主函数入口 (这是脚本的大脑) =================
+
+// 分组图标映射：统一管理策略组 icon（仅注入，不改变组生成逻辑）
+// key 必须与 proxy-group 的 name 完全一致，否则匹配不到
+const GROUP_ICONS = {
+    // 总出口与自动测速组
+    "Proxy": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Proxy.png",
+    "🌏 Auto": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Auto.png",
+
+    // 规则分组
+    "LAN": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/WiFi.png",
+
+    // Qure Color 里没有 GlobalMedia.png，因此“全球媒体”改用 ForeignMedia 图标
+    "全球媒体": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/ForeignMedia.png",
+
+    "国内网站": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/China.png",
+    "广告拦截": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Reject.png",
+
+    "OpenAI": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/ChatGPT.png",
+    "Gemini": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/AI.png",
+
+    "linux.do": "https://linux.do/uploads/default/original/3X/9/d/9dd49731091ce8656e94433a26a3ef36062b3994.png",
+
+    "GitHub": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/GitHub.png",
+    "Google": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Google.png",
+
+    "SteamCN": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Steam.png",
+    "Steam": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Steam.png",
+
+    "PayPal": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/PayPal.png",
+
+    // 地区测速组（必须与 regionProxyGroups 的 name 完全一致）
+    "🇭🇰 Hong Kong": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Hong_Kong.png",
+    "🇸🇬 Singapore": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Singapore.png",
+    "🇯🇵 Japan": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Japan.png",
+    "🇺🇸 United States": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/United_States.png",
+};
+
+
+// =============================================================================
+// 1) 主流程：入口与“代理名收集”
+//    Clash Verge / 某些客户端会把代理放在 proxies，也可能来自 proxy-providers。
+//    这里统一收集代理名称，供分组与测速使用。
+// =============================================================================
 function getAllProxyNames(config) {
-    // 优先用 proxies
+    // 情况 1：客户端直接展开在 proxies 字段
     if (Array.isArray(config.proxies) && config.proxies.length) {
         return config.proxies.map(p => p.name);
     }
-    // 尝试从 proxy-providers 里抽（部分客户端会展开）
+
+    // 情况 2：代理来自 proxy-providers（部分客户端会把 provider 的 proxies 展开出来）
     const providers = config["proxy-providers"] || {};
     const names = [];
     for (const key of Object.keys(providers)) {
@@ -41,79 +97,104 @@ function getAllProxyNames(config) {
             names.push(...p.proxies.map(x => x.name));
         }
     }
+
+    // 去重后返回，保证后续策略组不会重复注入同名节点
     return [...new Set(names)];
 }
 
-// Clash Verge 启动时会把默认配置塞给 config，这个函数负责把 config 改造成你要的样子
+// 主入口：把“启动时的默认 config”加工成你想要的样子
+// 顺序非常关键：
+// - overwriteRules/Groups/Dns 负责“统一框架”
+// - addCustomRules 最后插入你的本地私货（并放到 rules 最前面保证优先级）
 function main(config) {
     const allProxies = getAllProxyNames(config);
+
+    // 如果没有拿到任何节点名称，说明当前配置未展开/无节点，直接原样返回
     if (!allProxies.length) return config;
 
-    // 挂到 config 上供后续函数使用（兼容 provider 场景）
+    // 将“全部代理名”挂到 config 上，方便后续函数在 provider 场景下也能使用
     config._allProxyNames = allProxies;
 
-    // 接下来像流水线一样加工配置，顺序很重要！
-    overwriteRules(config);       // 3. 搞定分流规则
-    overwriteProxyGroups(config); // 4. 搞定策略组
-    overwriteDns(config);         // 5. 搞定 DNS
-    addCustomRules(config);       // 2. 插入你的私货
+    // 流水线加工：每一步都覆盖/生成特定字段
+    overwriteRules(config);       // 3) 生成 rule-providers + rules
+    overwriteProxyGroups(config); // 4) 生成 proxy-groups（含地区测速组与规则组）
+    overwriteDns(config);         // 5) 覆写 DNS 与相关高级选项
+    addCustomRules(config);       // 2) 把自定义规则插到最前面（最高优先级）
 
     return config;
 }
 
-// ================= 2. 自定义规则 (这是 VIP 快速通道) =================
+
+// =============================================================================
+// 2) 自定义规则：你的“本地特权通道”
+//    这里放最想优先命中的规则（例如自己的常用站点），会插到 rules 最前面。
+// =============================================================================
 function addCustomRules(config) {
     const customRules = [
-        // ✅ linux.do：本地单条规则（最高优先级）
+        // linux.do：明确指定走 linux.do 这个策略组（高优先级）
         "DOMAIN-SUFFIX,linux.do,linux.do",
     ];
+
+    // 自定义规则放在最前：确保优先命中，不被后面的远程规则覆盖
     config["rules"] = [...customRules, ...config["rules"]];
 }
 
-// ================= 3. 覆写规则 & Providers =================
+
+// =============================================================================
+// 3) 规则与规则集（rule-providers + rules）
+//    - ruleUrlMap：每个策略组对应一个远程规则集地址
+//    - generatedProviders：根据 RULE_CONFIG 生成 providers
+//    - optimizedRules：最终的 rules 顺序（含本地 LAN 硬兜底 + 各 RULE-SET + MATCH）
+// =============================================================================
 function overwriteRules(params) {
+    // 规则集地址映射：key 必须与 RULE_CONFIG 对应
     const ruleUrlMap = {
         "LAN": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Lan/Lan_No_Resolve.yaml",
 
-        // 原 ChinaMax -> 改名：国内网站
+        // ChinaMax 改名为“国内网站”
         "国内网站": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
 
         "SteamCN": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/SteamCN/SteamCN_No_Resolve.yaml",
         "OpenAI": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/OpenAI/OpenAI_No_Resolve.yaml",
 
-        // ✅ Gemini（No_Resolve 版本）
+        // Gemini：使用 No_Resolve 版本，减少 DNS 干扰/泄露风险
         "Gemini": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Gemini/Gemini_No_Resolve.yaml",
 
-        // ✅ GitHub（No_Resolve 版本）
+        // GitHub：使用 No_Resolve 版本
         "GitHub": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/GitHub/GitHub_No_Resolve.yaml",
 
         "Google": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Google/Google_No_Resolve.yaml",
         "PayPal": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/PayPal/PayPal_No_Resolve.yaml",
         "Steam": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam_No_Resolve.yaml",
 
-        // 原 GlobalMedia -> 改名：全球媒体
+        // GlobalMedia 改名为“全球媒体”
         "全球媒体": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml",
 
-        // ✅ 广告拦截：最稳妥用 Classical_No_Resolve
+        // 广告拦截：使用 Classical_No_Resolve 版本更稳妥
         "广告拦截": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite_Classical_No_Resolve.yaml",
     };
 
+    // 根据 RULE_CONFIG 生成 rule-providers（只生成 ruleUrlMap 中存在的）
     const generatedProviders = {};
     Object.keys(RULE_CONFIG).forEach((key) => {
         if (ruleUrlMap[key]) {
             generatedProviders[key] = {
-                type: "http",
-                behavior: "classical",
-                url: ruleUrlMap[key],
-                path: `./ruleset/${key}.yaml`,
-                interval: 86400,
+                type: "http",               // 远程拉取
+                behavior: "classical",      // classical 规则集
+                url: ruleUrlMap[key],       // 规则源地址
+                path: `./ruleset/${key}.yaml`, // 本地缓存路径
+                interval: 86400,            // 1 天更新一次
                 format: "yaml",
             };
         }
     });
 
+    // 最终 rules：顺序即优先级（上高下低）
+    // 1) 先放本地 LAN IP 硬兜底：即使远程规则失效也确保内网直连
+    // 2) 再放各 RULE-SET：按业务分流
+    // 3) 最后 MATCH：所有未命中流量走总出口 PROXY_NAME
     const optimizedRules = [
-        // ---- 本地 LAN 兜底（硬规则，不依赖远程）----
+        // ---- 本地 LAN 兜底：不依赖远程规则集 ----
         "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
         "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
         "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
@@ -122,6 +203,7 @@ function overwriteRules(params) {
         "DOMAIN-SUFFIX,local,DIRECT",
         "DOMAIN-SUFFIX,lan,DIRECT",
 
+        // ---- 远程规则集引用：RULE-SET,provider-name,policy-group ----
         "RULE-SET,LAN,DIRECT,no-resolve",
         "RULE-SET,广告拦截,广告拦截,no-resolve",
         "RULE-SET,OpenAI,OpenAI,no-resolve",
@@ -133,22 +215,37 @@ function overwriteRules(params) {
         "RULE-SET,Steam,Steam,no-resolve",
         "RULE-SET,全球媒体,全球媒体,no-resolve",
         "RULE-SET,国内网站,国内网站,no-resolve",
+
+        // ---- 最终兜底：全部未命中流量走总出口 ----
         "MATCH," + PROXY_NAME,
     ];
 
+    // 合并（保留已有 providers，再叠加生成的）
     params["rule-providers"] = {
         ...(params["rule-providers"] || {}),
         ...generatedProviders,
     };
+
+    // 覆写 rules 为本脚本生成的版本（确保规则顺序可控）
     params["rules"] = optimizedRules;
 }
 
-// ================= 4. 覆写代理组 =================
+
+// =============================================================================
+// 4) 策略组（proxy-groups）生成：
+//    - 地区测速组：用正则从节点名中筛选香港/新加坡/日本/美国
+//    - 总出口 Proxy：包含 Auto + 地区组 + 全部节点 + DIRECT
+//    - 规则组：按 RULE_CONFIG 默认策略生成 select 组
+//    - 最后统一注入 icon：不改变原组结构，只补全视觉信息
+// =============================================================================
 function overwriteProxyGroups(params) {
-    // ✅ 兼容 provider：优先用 main() 里整理出来的名字
+    // 兼容 provider：优先使用 main() 挂载的 _allProxyNames
     const allProxies = params._allProxyNames || (params["proxies"] || []).map((e) => e.name);
 
-    // 4.1 地区正则（加入 . 和 @ 作为常见分隔符，避免一些命名导致边界断不开）
+    // 地区匹配正则：
+    // - 支持中文/英文/旗帜/常见缩写
+    // - 允许命名中出现分隔符（- _ 空格等）
+    // - 允许 HK1/HK2 这类数字后缀
     const regionFilterRegexs = [
         { name: "🇭🇰 Hong Kong", regex: /香港|Hong[-\s_]*Kong|HongKong|🇭🇰|HKG|HK(\d+)?/i },
         { name: "🇸🇬 Singapore", regex: /新加坡|狮城|Singapore|🇸🇬|SIN|SGP|SG(\d+)?/i },
@@ -156,6 +253,8 @@ function overwriteProxyGroups(params) {
         { name: "🇺🇸 United States", regex: /美国|United\s*States|America|🇺🇸|USA|US(\d+)?/i },
     ];
 
+    // 生成地区测速组：url-test 会自动选择延迟最优节点
+    // lazy=true：仅在使用该组时才触发测速，减少无意义探测
     const regionProxyGroups = regionFilterRegexs
         .map((item) => {
             const proxies = getProxiesByRegex(params, item.regex);
@@ -169,27 +268,36 @@ function overwriteProxyGroups(params) {
                 lazy: true,
             };
         })
+        // 没匹配到任何节点的地区组就不生成，避免空组污染界面
         .filter((item) => item.proxies.length > 0);
 
+    // 仅收集已生成地区组的名字，用于注入到其它 select 组中
     const regionGroupNames = regionProxyGroups.map((g) => g.name);
 
+    // 为每个规则策略组生成一个 select：让你手动切换该类流量走向
+    // 组内候选顺序体现“默认推荐顺序”，但仍可手动选择
     const ruleSetProxyGroups = Object.keys(RULE_CONFIG).map((ruleSetName) => {
         const defaultStrategy = RULE_CONFIG[ruleSetName];
         let proxies;
 
+        // LAN 组只允许 DIRECT：避免误操作导致内网绕路
         if (ruleSetName === "LAN") {
             proxies = ["DIRECT"];
         } else if (defaultStrategy === "DIRECT") {
+            // 默认直连的组：优先 DIRECT，但也允许切 PROXY/地区组
             proxies = ["DIRECT", PROXY_NAME, ...regionGroupNames];
         } else if (defaultStrategy === "REJECT") {
+            // 拦截组：默认 REJECT，同时留 DIRECT/PROXY 作为容错
             proxies = ["REJECT", "DIRECT", PROXY_NAME, ...regionGroupNames];
         } else {
+            // 默认代理的组：优先总出口/地区组，但保留 DIRECT 以便应急
             proxies = [PROXY_NAME, ...regionGroupNames, "DIRECT"];
         }
 
         return { name: ruleSetName, type: "select", proxies };
     });
 
+    // 全局自动测速组：对“所有节点”做 url-test，自动挑最快
     const autoSelect = {
         name: "🌏 Auto",
         type: "url-test",
@@ -200,26 +308,48 @@ function overwriteProxyGroups(params) {
         lazy: true,
     };
 
+    // 总出口组：你最终手动选择的入口
+    // 候选顺序：Auto -> 地区组 -> 全部节点 -> DIRECT
     const proxyGroup = {
         name: PROXY_NAME,
         type: "select",
         proxies: ["🌏 Auto", ...regionGroupNames, ...allProxies, "DIRECT"],
     };
 
+    // 汇总写回：总出口 + Auto + 规则组 + 地区测速组
     params["proxy-groups"] = [
         proxyGroup,
         autoSelect,
         ...ruleSetProxyGroups,
         ...regionProxyGroups,
     ];
+
+    // 统一注入 icon：
+    // - 不改变组的 proxies/type 等逻辑
+    // - 仅根据组名匹配图标，匹配不到则保留原 icon
+    params["proxy-groups"] = (params["proxy-groups"] || []).map(g => ({
+        ...g,
+        icon: GROUP_ICONS[g.name] || g.icon,
+    }));
 }
 
-// ================= 5. 覆写 DNS (最终安全版 - 防止 DNS 泄露) =================
+
+// =============================================================================
+// 5) DNS 与高级选项：
+//    目标：
+//    - fake-ip + respect-rules：让 DNS 行为与分流规则对齐，减少泄露
+//    - 国内站点用国内 DNS（proxy-server-nameserver / policy）
+//    - 非国内用 DoH（nameserver）提升可用性与抗污染能力
+//    同时统一开启一些常用性能/体验选项（unified-delay、sniffer 等）
+// =============================================================================
 function overwriteDns(params) {
+    // 国内 DNS：用于处理国内域名解析，避免绕路/解析慢
     const cnDnsList = [
         "223.5.5.5", "223.6.6.6",
         "119.29.29.29", "119.28.28.28",
     ];
+
+    // 可信 DoH：用于国际域名解析，降低污染概率
     const trustDnsList = [
         "https://cloudflare-dns.com/dns-query",
         "https://dns.google/dns-query",
@@ -227,6 +357,13 @@ function overwriteDns(params) {
         "https://8.8.4.4/dns-query",
     ];
 
+    // DNS 主体配置：
+    // - enhanced-mode=fake-ip：提升域名命中率与规则体验
+    // - fake-ip-filter：这些域名必须走真实 IP（局域网/探测域名/时间服务等）
+    // - nameserver：主解析器（这里使用 DoH）
+    // - proxy-server-nameserver：走代理解析时使用的 DNS（这里放国内 DNS）
+    // - respect-rules=true：让 DNS 策略尊重分流规则（关键！）
+    // - nameserver-policy：按 geosite 分类对不同域名使用不同 DNS
     const dnsOptions = {
         "enable": true,
         "ipv6": false,
@@ -260,6 +397,9 @@ function overwriteDns(params) {
         },
     };
 
+    // Geo 数据库下载地址：
+    // rawGeoxURLs 为官方 GitHub release
+    // accelURLs 通过加速前缀拼接，提升国内拉取成功率
     const rawGeoxURLs = {
         "geoip": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip-lite.dat",
         "geosite": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat",
@@ -272,6 +412,12 @@ function overwriteDns(params) {
         ])
     );
 
+    // 其它性能/体验选项：
+    // - unified-delay：延迟统计更一致
+    // - tcp-concurrent：并发握手提升体验
+    // - profile：记住上次选择与 fake-ip 映射
+    // - sniffer：基于 SNI/HTTP Host 协助识别域名（对分流更友好）
+    // - geodata-mode + geox-url：使用 geodata 并指定下载源
     const otherOptions = {
         "unified-delay": true,
         "tcp-concurrent": true,
@@ -287,11 +433,19 @@ function overwriteDns(params) {
         "geox-url": accelURLs,
     };
 
+    // 写回 DNS：保留原 params.dns 中其他字段，再覆盖为本脚本版本
     params.dns = { ...params.dns, ...dnsOptions };
+
+    // 将其它顶层选项写回到 params（覆盖/注入）
     Object.keys(otherOptions).forEach((key) => { params[key] = otherOptions[key]; });
 }
 
-// ================= 辅助函数 =================
+
+// =============================================================================
+// 辅助函数：按正则筛选节点名
+// - provider 场景优先用 _allProxyNames
+// - 返回匹配该地区/关键字的节点名称数组
+// =============================================================================
 function getProxiesByRegex(params, regex) {
     const names = params._allProxyNames || (params.proxies || []).map((e) => e.name);
     return names.filter((name) => regex.test(name));
