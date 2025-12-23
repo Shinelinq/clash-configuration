@@ -99,7 +99,7 @@ function overwriteRules(params) {
     // 3.3 规则顺序 (Clash 匹配规则是从上到下的，命中即停，所以顺序极其重要！)
     // ✅【新增】本地 LAN 兜底：避免 LAN 远程 provider 拉取失败时，局域网流量掉进 MATCH/Proxy
     // ✅【保持】统一在 RULE-SET 行末尾加 no-resolve
-    // ✅【修改】ChinaMax 改为走策略组：RULE-SET,ChinaMax,ChinaMax
+    // ✅【保持】ChinaMax 走策略组：RULE-SET,ChinaMax,ChinaMax
     const optimizedRules = [
         // ---- 本地 LAN 兜底（硬规则，不依赖远程）----
         "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
@@ -129,7 +129,7 @@ function overwriteRules(params) {
         "RULE-SET,Steam,Steam,no-resolve",
         
         "RULE-SET,GlobalMedia,GlobalMedia,no-resolve",
-        // ✅ 最后兜底：国内流量走 ChinaMax 策略组（默认 DIRECT，可手动切）
+        // 国内流量走 ChinaMax 策略组（默认 DIRECT，可手动切）
         "RULE-SET,ChinaMax,ChinaMax,no-resolve",
         // 漏网之鱼：上面都没匹配到的，全部走 Proxy
         "MATCH," + PROXY_NAME,
@@ -150,20 +150,13 @@ function overwriteProxyGroups(params) {
 
     // 4.1 地区正则 (重点！！)
     // 这里定义了如何通过名字筛选节点
+    // ✅【修改】仅保留最常用的四个地区：HK / SG / JP / US
     const regionFilterRegexs = [
-        // 修正版正则：
-        // 1. 匹配“香港”、“Hong Kong”
-        // 2. 匹配“HK”开头或结尾，或者中间夹着
-        // 3. 关键点：(\d+)? 允许 HK 后面直接跟数字（如 HK01），解决了之前 HK01 不匹配的问题
-        // 4. 同时防止了 HKG 这种非数字后缀被误伤
-        { name: "🇭🇰 Hong Kong", regex: /香港|Hong\s*Kong|🇭🇰|(^|[\s\-_])HK(\d+)?([\s\-_]|$)/i }, 
-        { name: "🇸🇬 Singapore", regex: /新加坡|狮城|SG|Singapore|🇸🇬/i },
-        { name: "🇯🇵 Japan", regex: /日本|JP|Japan|🇯🇵/i },
-        { name: "🇺🇸 United States", regex: /美国|US|United States|America|🇺🇸/i },
-        { name: "🇨🇳 Taiwan", regex: /台湾|TW|Taiwan|🇹🇼/i }, 
-        { name: "🇩🇪 Germany", regex: /德国|DE|Germany|🇩🇪/i },
-        { name: "🇬🇧 United Kingdom", regex: /英国|UK|United Kingdom|Britain|🇬🇧/i },
-        { name: "🇰🇷 South Korea", regex: /韩国|KR|South Korea|🇰🇷/i },
+         // 🇭🇰 Hong Kong
+        { name: "🇭🇰 Hong Kong", regex: /香港|Hong\s*Kong|HongKong|🇭🇰|HK(\d+)?|HKG/i },
+        { name: "🇸🇬 Singapore", regex: /新加坡|狮城|Singapore|🇸🇬|SG(\d+)?|SGP(\d+)?|SIN/i },
+        { name: "🇯🇵 Japan", regex: /日本|Japan|🇯🇵|JP(\d+)?|JPN/i },
+        { name: "🇺🇸 United States", regex: /美国|United\s*States|America|🇺🇸|US(\d+)?|USA/i },
     ];
 
     // 4.2 生成地区测速组
@@ -187,7 +180,7 @@ function overwriteProxyGroups(params) {
 
     // 4.3 生成规则集策略组 (对应 Section 0 的配置)
     // 比如生成一个叫 "Netflix" 的组，让你可以手动选是走 "Proxy" 还是 "香港"
-    // ✅【修改】LAN 组只保留 DIRECT 一个选项（只读指示灯）
+    // ✅【保持】LAN 组只保留 DIRECT 一个选项（只读指示灯）
     const ruleSetProxyGroups = Object.keys(RULE_CONFIG).map((ruleSetName) => {
         const defaultStrategy = RULE_CONFIG[ruleSetName];
         let proxies;
