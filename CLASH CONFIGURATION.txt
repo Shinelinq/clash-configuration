@@ -97,8 +97,18 @@ function overwriteRules(params) {
     });
 
     // 3.3 规则顺序 (Clash 匹配规则是从上到下的，命中即停，所以顺序极其重要！)
-    // ✅【修改点 5】统一在 RULE-SET 行末尾加 no-resolve
+    // ✅【新增】本地 LAN 兜底：避免 LAN 远程 provider 拉取失败时，局域网流量掉进 MATCH/Proxy
+    // ✅【保持】统一在 RULE-SET 行末尾加 no-resolve
     const optimizedRules = [
+        // ---- 本地 LAN 兜底（硬规则，不依赖远程）----
+        "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+        "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+        "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+        "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+        "IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
+        "DOMAIN-SUFFIX,local,DIRECT",
+        "DOMAIN-SUFFIX,lan,DIRECT",
+
         // 先判断局域网，不走流量
         "RULE-SET,LAN,DIRECT,no-resolve",
         // 再判断国内应用（SteamCN, B站等），让它们直连
@@ -264,14 +274,12 @@ function overwriteDns(params) {
         "default-nameserver": ["223.5.5.5", "119.29.29.29"], 
         "nameserver": trustDnsList, 
 
-        // ✅【修改点 4】再补一刀：专门给代理服务器域名解析用，增强稳定性/防泄露
+        // ✅ 专门给代理服务器域名解析用，增强稳定性/防泄露
         "proxy-server-nameserver": cnDnsList,
+        // ✅【补齐】让 DNS 行为更贴近分流规则
+        "respect-rules": true,
 
         // 【核心高级功能】Nameserver Policy
-        // 这里就是比 fallback-filter 高级的地方
-        // 明确指定：geosite 是 cn 的域名，必须用国内 DNS 解析
-        // geosite 不是 cn 的，必须用国外 TrustDNS 解析
-        // 这样彻底杜绝了 DNS 污染，也不用并发请求去猜
         "nameserver-policy": {
             "geosite:cn": cnDnsList,
             "geosite:geolocation-!cn": trustDnsList,
