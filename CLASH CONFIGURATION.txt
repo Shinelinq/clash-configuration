@@ -80,33 +80,33 @@ const RULE_CONFIG = {
 // key 必须与 proxy-group 的 name 完全一致，否则匹配不到
 const GROUP_ICONS = {
   // 总出口与自动测速组
-  "Proxy": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Proxy.png",
-  "🌏 Auto": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Auto.png",
+  "Proxy": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Proxy.png",
+  "🌏 Auto": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Auto.png",
 
   // 规则分组
-  "LAN": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/WiFi.png",
+  "LAN": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/WiFi.png",
 
   // Qure Color 里没有 GlobalMedia.png，因此“全球媒体”改用 ForeignMedia 图标
-  "全球媒体": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/ForeignMedia.png",
+  "全球媒体": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ForeignMedia.png",
 
-  "国内网站": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/China.png",
-  "广告拦截": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Reject.png",
+  "国内网站": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/China.png",
+  "广告拦截": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Reject.png",
 
-  "OpenAI": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/ChatGPT.png",
-  "Gemini": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/AI.png",
+  "OpenAI": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ChatGPT.png",
+  "Gemini": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/AI.png",
 
   "linux.do": "https://linux.do/uploads/default/original/3X/9/d/9dd49731091ce8656e94433a26a3ef36062b3994.png",
 
-  "GitHub": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/GitHub.png",
-  "Google": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Google.png",
+  "GitHub": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/GitHub.png",
+  "Google": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Google.png",
 
-  "SteamCN": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Steam.png",
-  "Steam": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Steam.png",
+  "SteamCN": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png",
+  "Steam": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png",
 
-  "PayPal": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/PayPal.png",
+  "PayPal": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/PayPal.png",
 
-  // 手动添加（可选图标）
-  [MANUAL_GROUP_NAME]: "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Global.png",
+  // 手动添加
+  [MANUAL_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Server.png",
 
   // 地区测速组（必须与 regionProxyGroups 的 name 完全一致）
   "🇭🇰 Hong Kong": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Hong_Kong.png",
