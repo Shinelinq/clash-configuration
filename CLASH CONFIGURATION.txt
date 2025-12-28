@@ -42,10 +42,10 @@ const MANUAL_PROXIES = [];
 // 目标：完全 UI 可控入口/出口，不依赖 dialer-proxy
 // - “链路入口（中转节点）”：仅包含 🌏 Auto + normalProxies + DIRECT
 // - “链路出口（手动添加）”：仅包含手动节点本体（不含 DIRECT，保持语义纯净）
-// - “自定义链式代理”：relay 组，仅引用入口组与出口组
-const CHAIN_ENTRY_GROUP_NAME = "⛓️ 链路入口（中转节点）";
-const CHAIN_EXIT_GROUP_NAME = "⛓️ 链路出口（手动添加）";
-const CHAIN_RELAY_GROUP_NAME = "⛓️ 自定义链式代理";
+// - “链式代理”：relay 组，仅引用入口组与出口组
+const CHAIN_ENTRY_GROUP_NAME = "链路入口（中转节点）";
+const CHAIN_EXIT_GROUP_NAME = "链路出口（手动添加）";
+const CHAIN_RELAY_GROUP_NAME = "📡 链式代理";
 
 // 规则策略配置表：
 // key   = 规则分组名称（必须与 rule-provider / proxy-group 名称保持一致）
@@ -59,15 +59,15 @@ const RULE_CONFIG = {
   "LAN": "DIRECT",            // 局域网
   "国内网站": "DIRECT",        // 国内站点集合（ChinaMax 改名）
   "全球媒体": "PROXY",         // 海外媒体集合（GlobalMedia 改名）
-  "广告拦截": "REJECT",        // 广告/追踪域名集合
   "OpenAI": "PROXY",          // ChatGPT / OpenAI 相关
   "Gemini": "PROXY",          // Google Gemini 相关
+  "Google": "PROXY",          // Google
   "linux.do": "PROXY",        // 本地自定义域名（仅 1 条单独规则）
   "GitHub": "PROXY",          // GitHub
-  "Google": "PROXY",          // Google
   "SteamCN": "DIRECT",        // Steam 国内部分（商店/国区相关）
   "Steam": "PROXY",           // Steam 国际/社区等
   "PayPal": "PROXY",          // PayPal
+  "广告拦截": "REJECT",        // 广告/追踪域名集合
 };
 
 // 分组图标映射：统一管理策略组 icon（仅注入，不改变组生成逻辑）
@@ -100,9 +100,9 @@ const GROUP_ICONS = {
   "PayPal": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/PayPal.png",
 
   // 链式代理相关
-  [CHAIN_ENTRY_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Server.png",
-  [CHAIN_EXIT_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Global.png",
-  [CHAIN_RELAY_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Link.png",
+  [CHAIN_ENTRY_GROUP_NAME]: "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Rocket.png",
+  [CHAIN_EXIT_GROUP_NAME]: "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Server.png",
+  [CHAIN_RELAY_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Loop.png",
 
   // 地区测速组（必须与 regionProxyGroups 的 name 完全一致）
   "🇭🇰 Hong Kong": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Hong_Kong.png",
