@@ -27,7 +27,7 @@ const MANUAL_RENAME_SUFFIX = " (Manual)";
 // 示例（请自行填写 server/port/账号等）：
 // const MANUAL_PROXIES = [
 //   {
-//     name: "美国住宅代理",
+//     name: "自定义添加节点1",
 //     type: "socks5",
 //     server: "your.domain.or.ip",
 //     port: 12345,
@@ -105,10 +105,10 @@ const GROUP_ICONS = {
   [CHAIN_RELAY_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Loop.png",
 
   // 地区测速组（必须与 regionProxyGroups 的 name 完全一致）
-  "🇭🇰 Hong Kong": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Hong_Kong.png",
-  "🇸🇬 Singapore": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Singapore.png",
-  "🇯🇵 Japan": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/Japan.png",
-  "🇺🇸 United States": "https://raw.gitmirror.com/koolson/Qure/master/IconSet/Color/United_States.png",
+  "🇭🇰 Hong Kong": "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Hong_Kong.png",
+  "🇸🇬 Singapore": "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Singapore.png",
+  "🇯🇵 Japan": "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Japan.png",
+  "🇺🇸 United States": "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/United_States.png",
 };
 
 
