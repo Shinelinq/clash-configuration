@@ -147,21 +147,22 @@ const GROUP_ICONS = {
 // =============================================================================
 // 1) 主流程：入口与“代理名收集”
 // -----------------------------------------------------------------------------
-// 背景：不同客户端/订阅格式可能把节点放在：
-// - config.proxies
-// - config["proxy-providers"]（provider 展开后会有 proxies）
 // 这里统一收集代理名称，供：分组生成、测速、地区筛选使用。
+// 从 config.proxies 收集所有节点名称，供分组生成、测速、地区筛选使用。
+// Clash Verge / Party 等客户端会在脚本执行前将订阅节点解析到 config.proxies。
+// 同时遍历 proxy-providers 以备兼容，但主流客户端中 provider 节点在脚本执行阶段尚未加载，该遍历通常不会收集到节点。
 // =============================================================================
-function getAllProxyNames(config) {
-  // 合并收集（重要）：避免注入手动节点到 proxies 后遮蔽 provider 节点
+function getAllProxyNames(config){
+  // 订阅解析后节点通常在 config.proxies 中
   const names = [];
 
-  // proxies 字段
+  // proxies 字段：订阅解析后节点通常在这里
   if (Array.isArray(config.proxies) && config.proxies.length) {
     names.push(...config.proxies.map(p => p && p.name).filter(Boolean));
   }
 
-  // proxy-providers 展开的 proxies（某些客户端会在运行时展开到 provider 内）
+  // 遍历 proxy-providers 以备兼容；主流客户端中 provider 节点
+  // 在脚本执行阶段尚未加载到此字段，通常不会命中
   const providers = config["proxy-providers"] || {};
   for (const key of Object.keys(providers)) {
     const p = providers[key];
@@ -194,77 +195,94 @@ function isValidManualProxy(raw) {
 // -----------------------------------------------------------------------------
 // 顺序非常关键：
 // - overwriteRules / overwriteProxyGroups / overwriteDns 负责“框架化输出”
-// - addCustomRules 最后插入你的本地特权规则，并放到 rules 最前面保证优先级
+// - addCustomRules 最后插入你的本地特权规则，插到 LAN 硬编码之后、远程规则集之前
 // =============================================================================
 function main(config) {
-  // ---------- (A) 手动节点注入（链式出口节点来源） ----------
-  // 确保 proxies 可写（provider-only 配置可能没有 proxies）
-  if (!Array.isArray(config.proxies)) config.proxies = [];
-
-  // 记录最终注入成功的手动节点名（用于后续分层：manual vs normal）
-  const manualNames = [];
-
-  // 注入手动节点：处理撞名 + 强制清洗 dialer-proxy + 最小校验
-  if (Array.isArray(MANUAL_PROXIES) && MANUAL_PROXIES.length > 0) {
-    const existingNames = new Set(getAllProxyNames(config));
-
-    for (const raw of MANUAL_PROXIES) {
-      if (!isValidManualProxy(raw)) continue;
-
-      // 复制一份，避免外部常量被意外改动
-      const p = { ...raw };
-
-      // 强制清洗：链式方案中不允许 dialer-proxy（入口由 UI 控制）
-      if ("dialer-proxy" in p) {
-        try { delete p["dialer-proxy"]; } catch (_) { p["dialer-proxy"] = undefined; }
-      }
-
-      // 撞名消解：仅对手动节点生效、一次性稳定改名
-      let finalName = String(p.name);
-      if (existingNames.has(finalName)) {
-        let i = 1;
-        let candidate = `${finalName}${MANUAL_RENAME_SUFFIX}`;
-        while (existingNames.has(candidate)) {
-          i += 1;
-          candidate = `${finalName}${MANUAL_RENAME_SUFFIX}-${i}`;
-        }
-        finalName = candidate;
-        p.name = finalName;
-      }
-
-      existingNames.add(finalName);
-      manualNames.push(finalName);
-      config.proxies.push(p);
-    }
+  // 基本校验：防止 config 为 null/undefined
+  if (!config || typeof config !== "object") return config || {};
+  // 备份原始配置：出错时返回干净备份，而不是被改了一半的 config
+  let backup;
+  try {
+    backup = JSON.parse(JSON.stringify(config));
+  } catch (_) {
+    backup = config; // 极端情况：备份失败就用原引用，比崩掉强
   }
 
-  // 将“手动节点名列表”挂到 config 上，供后续流程使用（分层/排除/链式生成）
-  config._manualProxyNames = manualNames;
+  try {
+    // ---------- (A) 手动节点注入（链式出口节点来源） ----------
+    // 确保 proxies 是数组（某些订阅格式可能缺失此字段）
+    if (!Array.isArray(config.proxies)) config.proxies = [];
 
-  // ---------- (B) 收集所有节点名 ----------
-  const allProxies = getAllProxyNames(config);
+    // 记录最终注入成功的手动节点名（用于后续分层：manual vs normal）
+    const manualNames = [];
 
-  // 如果没有拿到任何节点名称，说明当前配置未展开/无节点，直接原样返回
-  if (!allProxies.length) return config;
+    // 注入手动节点：处理撞名 + 强制清洗 dialer-proxy + 最小校验
+    if (Array.isArray(MANUAL_PROXIES) && MANUAL_PROXIES.length > 0) {
+      const existingNames = new Set(getAllProxyNames(config));
 
-  // 将“全部代理名”挂到 config 上，方便后续函数在 provider 场景下也能使用
-  config._allProxyNames = allProxies;
+      for (const raw of MANUAL_PROXIES) {
+        if (!isValidManualProxy(raw)) continue;
 
-  // ---------- (C) 流水线加工 ----------
-  overwriteRules(config);        // 生成 rule-providers + rules
-  overwriteProxyGroups(config);  // 生成 proxy-groups（含地区测速组与规则组 + 链式代理组）
-  overwriteDns(config);          // 覆写 DNS 与相关高级选项
-  addCustomRules(config);        // 把自定义规则插到 rules 最前面（最高优先级）
+        // 复制一份，避免外部常量被意外改动
+        const p = { ...raw };
 
-  return config;
+        // 强制清洗：链式方案中不允许 dialer-proxy（入口由 UI 控制）
+        if ("dialer-proxy" in p) {
+          try { delete p["dialer-proxy"]; } catch (_) { p["dialer-proxy"] = undefined; }
+        }
+
+        // 撞名消解：仅对手动节点生效、一次性稳定改名
+        let finalName = String(p.name);
+        if (existingNames.has(finalName)) {
+          let i = 1;
+          let candidate = `${finalName}${MANUAL_RENAME_SUFFIX}`;
+          while (existingNames.has(candidate)) {
+            i += 1;
+            candidate = `${finalName}${MANUAL_RENAME_SUFFIX}-${i}`;
+          }
+          finalName = candidate;
+          p.name = finalName;
+        }
+
+        existingNames.add(finalName);
+        manualNames.push(finalName);
+        config.proxies.push(p);
+      }
+    }
+
+    // 将“手动节点名列表”挂到 config 上，供后续流程使用（分层/排除/链式生成）
+    config._manualProxyNames = manualNames;
+
+    // ---------- (B) 收集所有节点名 ----------
+    const allProxies = getAllProxyNames(config);
+
+    // 如果没有拿到任何节点名称，说明当前配置未展开/无节点，直接原样返回
+    if (!allProxies.length) return config;
+
+    // 将“全部代理名”挂到 config 上，供后续函数统一使用
+    config._allProxyNames = allProxies;
+
+    // ---------- (C) 流水线加工 ----------
+    overwriteRules(config);        // 生成 rule-providers + rules
+    overwriteProxyGroups(config);  // 生成 proxy-groups（含地区测速组与规则组 + 链式代理组）
+    overwriteDns(config);          // 覆写 DNS 与相关高级选项
+    addCustomRules(config);        // 把自定义规则插到 LAN 硬编码之后、远程规则集之前
+
+    return config;
+
+  } catch (e) {
+    console.log("脚本执行出错，回退到原始配置：" + (e.message || e));
+    return backup;
+  }
 }
 
 
 // =============================================================================
-// 2) 自定义规则：本地特权通道（最高优先级）
+// 2) 自定义规则：本地特权通道（高优先级，仅次于 LAN 保护）
 // -----------------------------------------------------------------------------
-// 这里放你“最想优先命中”的规则（例如自己的常用站点）。
-// 这些规则会插到 rules 最前面，保证优先级最高，不被远程规则覆盖。
+// 这里放你"最想优先命中"的规则（例如自己的常用站点）。
+// 这些规则会插到 LAN 硬编码之后、远程规则集之前，
+// 优先级很高但不会覆盖内网直连保护。
 // =============================================================================
 function addCustomRules(config) {
   const customRules = [
@@ -272,7 +290,17 @@ function addCustomRules(config) {
     "DOMAIN-SUFFIX,linux.do,linux.do",
   ];
 
-  config["rules"] = [...customRules, ...config["rules"]];
+  let rules = config["rules"];
+  if (!Array.isArray(rules)) rules = [];
+  // 插在第一条 RULE-SET 之前（LAN 硬编码之后、远程规则集之前）
+  // 自定义规则优先级仍然很高，但不会覆盖内网直连保护
+  const insertIndex = rules.findIndex(r => typeof r === "string" && r.startsWith("RULE-SET,"));
+  if (insertIndex >= 0) {
+    rules.splice(insertIndex, 0, ...customRules);
+    config["rules"] = rules;
+  } else {
+    config["rules"] = [...customRules, ...rules];
+  }
 }
 
 
@@ -398,7 +426,7 @@ function overwriteRules(params) {
 // - 最后统一注入 icon：仅增强 UI 显示，不改变组结构
 // =============================================================================
 function overwriteProxyGroups(params) {
-  // 兼容 provider：优先使用 main() 挂载的 _allProxyNames
+  // 优先使用 main() 预收集的 _allProxyNames，否则直接读取 proxies
   const allProxies = params._allProxyNames || (params["proxies"] || []).map((e) => e.name);
 
   const manualNames = Array.isArray(params._manualProxyNames) ? params._manualProxyNames : [];
@@ -675,8 +703,8 @@ function overwriteDns(params) {
 // =============================================================================
 // 辅助函数：按正则筛选节点名（默认排除手动节点）
 // -----------------------------------------------------------------------------
-// - provider 场景优先用 _allProxyNames
-// - 默认排除“手动节点”：手动节点语义是“链式出口”，不参与地区测速/Auto 测速
+// - 优先使用 main() 预收集的 _allProxyNames，否则直接读取 proxies
+// - 默认排除"手动节点"：手动节点语义是"链式出口"，不参与地区测速/Auto 测速
 // =============================================================================
 function getProxiesByRegex(params, regex) {
   const names = params._allProxyNames || (params.proxies || []).map((e) => e.name);
