@@ -37,15 +37,37 @@ const MANUAL_RENAME_SUFFIX = " (Manual)";
 // 你的手动节点列表：为空则完全不启用链式代理体系（入口/出口/relay 都不生成）
 // 示例（请自行填写 server/port/账号等）：
 // const MANUAL_PROXIES = [
-//   {
-//     name: "自定义添加节点1",
-//     type: "socks5",
-//     server: "your.domain.or.ip",
-//     port: 12345,
-//     username: "user",
-//     password: "pass",
-//     udp: true,
-//   },
+  // ---- 模板：trojan ----
+  // {
+  //   name: "名字",
+  //   type: "trojan",
+  //   server: "域名或IP",
+  //   port: 443,
+  //   password: "密码",
+  //   sni: "域名",
+  //   udp: true,
+  // },
+  
+  // ---- 模板：socks5 ----
+  // {
+  //   name: "名字",
+  //   type: "socks5",
+  //   server: "IP",
+  //   port: 1080,
+  //   username: "用户名",
+  //   password: "密码",
+  //   udp: true,
+  // },
+  // ---- 模板：ss ----
+  // {
+  //   name: "名字",
+  //   type: "ss",
+  //   server: "IP",
+  //   port: 8388,
+  //   cipher: "aes-256-gcm",
+  //   password: "密码",
+  //   udp: true,
+  // },
 // ];
 const MANUAL_PROXIES = [];
 
@@ -267,17 +289,17 @@ function addCustomRules(config) {
 // =============================================================================
 function overwriteRules(params) {
   const ruleUrlMap = {
-    "LAN": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Lan/Lan_No_Resolve.yaml",
-    "国内网站": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
-    "SteamCN": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/SteamCN/SteamCN_No_Resolve.yaml",
-    "OpenAI": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/OpenAI/OpenAI_No_Resolve.yaml",
-    "Gemini": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Gemini/Gemini_No_Resolve.yaml",
-    "GitHub": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/GitHub/GitHub_No_Resolve.yaml",
-    "Google": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Google/Google_No_Resolve.yaml",
-    "PayPal": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/PayPal/PayPal_No_Resolve.yaml",
-    "Steam": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam_No_Resolve.yaml",
-    "全球媒体": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml",
-    "广告拦截": "https://raw.gitmirror.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite_Classical_No_Resolve.yaml",
+    "LAN": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Lan/Lan_No_Resolve.yaml",
+    "国内网站": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
+    "SteamCN": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/SteamCN/SteamCN_No_Resolve.yaml",
+    "OpenAI": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OpenAI/OpenAI_No_Resolve.yaml",
+    "Gemini": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Gemini/Gemini_No_Resolve.yaml",
+    "GitHub": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GitHub/GitHub_No_Resolve.yaml",
+    "Google": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Google/Google_No_Resolve.yaml",
+    "PayPal": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/PayPal/PayPal_No_Resolve.yaml",
+    "Steam": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Steam/Steam_No_Resolve.yaml",
+    "全球媒体": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml",
+    "广告拦截": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AdvertisingLite/AdvertisingLite_Classical_No_Resolve.yaml",
   };
 
   // 根据 RULE_CONFIG 生成 rule-providers（只生成 ruleUrlMap 中存在的）
@@ -594,9 +616,9 @@ function overwriteDns(params) {
   // Geo 数据库下载地址（geodata-mode + geox-url）
   // - 用于 GEOSITE/GEOIP 等匹配能力
   const rawGeoxURLs = {
-    "geoip": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip-lite.dat",
-    "geosite": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat",
-    "mmdb": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country-lite.mmdb",
+    "geoip": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip-lite.dat",
+    "geosite": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat",
+    "mmdb": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country-lite.mmdb",
   };
 
   // 使用加速前缀（避免 GitHub 直连不稳定）
