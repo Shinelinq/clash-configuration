@@ -1,3 +1,4 @@
+// ⚠️ 本脚本仅适用于 Clash Meta (mihomo) 内核
 // =============================================================================
 // 0) 全局常量区：统一的“配置常量 + 策略字典”
 // -----------------------------------------------------------------------------
@@ -21,6 +22,20 @@ const PROXY_NAME = "Proxy";
 const TEST_URL = "https://cp.cloudflare.com/generate_204";
 const TEST_INTERVAL = 600;
 const TEST_TOLERANCE = 50;
+
+// 国内 DNS：用于处理国内域名解析，避免绕路/解析慢
+const cnDnsList = [
+  "223.5.5.5", "223.6.6.6",
+  "119.29.29.29", "119.28.28.28",
+];
+
+// 可信 DoH：用于国际域名解析，降低污染概率
+const trustDnsList = [
+  "https://cloudflare-dns.com/dns-query",
+  "https://dns.google/dns-query",
+  "https://1.1.1.1/dns-query",
+  "https://8.8.4.4/dns-query",
+];
 
 // ===================== 手动节点（链式代理出口） =====================
 // 说明：
@@ -95,7 +110,6 @@ const RULE_CONFIG = {
   "OpenAI": "PROXY",          // ChatGPT / OpenAI 相关，默认走代理
   "Gemini": "PROXY",          // Google Gemini 相关，默认走代理
   "Google": "PROXY",          // Google，默认走代理
-  "linux.do": "PROXY",        // 自定义域名（本地特权规则），默认走代理
   "GitHub": "PROXY",          // GitHub，默认走代理
   "SteamCN": "DIRECT",        // Steam 国内部分（商店/国区相关），默认直连
   "Steam": "PROXY",           // Steam 国际/社区等，默认代理
@@ -121,8 +135,6 @@ const GROUP_ICONS = {
   "OpenAI": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ChatGPT.png",
   "Gemini": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/AI.png",
 
-  "linux.do": "https://linux.do/uploads/default/original/3X/9/d/9dd49731091ce8656e94433a26a3ef36062b3994.png",
-
   "GitHub": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/GitHub.png",
   "Google": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Google.png",
 
@@ -143,6 +155,52 @@ const GROUP_ICONS = {
   "🇺🇸 United States": "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/United_States.png",
 };
 
+const CUSTOM_RULE_GROUPS = {
+  "linux.do": {
+    policy: "PROXY",
+    icon: "https://linux.do/uploads/default/original/3X/9/d/9dd49731091ce8656e94433a26a3ef36062b3994.png",
+    rules: [
+      "DOMAIN-SUFFIX,linux.do"
+    ]
+  },
+
+  // =============================
+  // 示例：未来新增自定义规则组
+  //
+  // 只需要在此处添加：
+  //
+  // "example.com": {
+  //   policy: "DIRECT",
+  //   icon: "图标URL",
+  //   rules: [
+  //     "DOMAIN-SUFFIX,example.com",
+  //     "DOMAIN,sub.example.com"
+  //   ]
+  // }
+  //
+  // 不需要修改任何函数逻辑
+  // =============================
+};
+
+// 地区匹配正则（支持中文/英文/旗帜/常见缩写/数字后缀）
+const regionFilterRegexs = [
+  {
+    name: "🇭🇰 Hong Kong",
+    regex: /香港|Hong[\s\-_]*Kong|🇭🇰|(?<![a-zA-Z])HKG(?![a-zA-Z])|(?<![a-zA-Z])HK\d*(?![a-zA-Z])/i,
+  },
+  {
+    name: "🇸🇬 Singapore",
+    regex: /新加坡|狮城|Singapore|🇸🇬|(?<![a-zA-Z])SIN(?![a-zA-Z])|(?<![a-zA-Z])SGP(?![a-zA-Z])|(?<![a-zA-Z])SG\d*(?![a-zA-Z])/i,
+  },
+  {
+    name: "🇯🇵 Japan",
+    regex: /日本|东京|大阪|Japan|Tokyo|Osaka|🇯🇵|(?<![a-zA-Z])JPN(?![a-zA-Z])|(?<![a-zA-Z])NRT(?![a-zA-Z])|(?<![a-zA-Z])KIX(?![a-zA-Z])|(?<![a-zA-Z])JP\d*(?![a-zA-Z])/i,
+  },
+  {
+    name: "🇺🇸 United States",
+    regex: /美国|洛杉矶|硅谷|西雅图|圣何塞|达拉斯|凤凰城|United[\s\-_]*States|America|🇺🇸|(?<![a-zA-Z])USA(?![a-zA-Z])|(?<![a-zA-Z])LAX(?![a-zA-Z])|(?<![a-zA-Z])SJC(?![a-zA-Z])|(?<![a-zA-Z])SEA(?![a-zA-Z])|(?<![a-zA-Z])DFW(?![a-zA-Z])|(?<![a-zA-Z])US\d*(?![a-zA-Z])/i,
+  },
+];
 
 // =============================================================================
 // 1) 主流程：入口与“代理名收集”
@@ -266,12 +324,21 @@ function main(config) {
     overwriteRules(config);        // 生成 rule-providers + rules
     overwriteProxyGroups(config);  // 生成 proxy-groups（含地区测速组与规则组 + 链式代理组）
     overwriteDns(config);          // 覆写 DNS 与相关高级选项
+    overwriteMiscOptions(config);
     addCustomRules(config);        // 把自定义规则插到 LAN 硬编码之后、远程规则集之前
+
+    // 清理内部临时字段，避免污染传给内核的 config
+    delete config._allProxyNames;
+    delete config._manualProxyNames;
 
     return config;
 
   } catch (e) {
     console.log("脚本执行出错，回退到原始配置：" + (e.message || e));
+    try {
+      delete backup._allProxyNames;
+      delete backup._manualProxyNames;
+    } catch (_) {}
     return backup;
   }
 }
@@ -285,10 +352,15 @@ function main(config) {
 // 优先级很高但不会覆盖内网直连保护。
 // =============================================================================
 function addCustomRules(config) {
-  const customRules = [
-    // linux.do：明确指定走 linux.do 这个策略组（高优先级）
-    "DOMAIN-SUFFIX,linux.do,linux.do",
-  ];
+  const customRules = [];
+  Object.keys(CUSTOM_RULE_GROUPS).forEach((key) => {
+    const rules = CUSTOM_RULE_GROUPS[key] && CUSTOM_RULE_GROUPS[key].rules;
+    if (Array.isArray(rules)) {
+      rules.forEach((r) => {
+        customRules.push(r + "," + key);
+      });
+    }
+  });
 
   let rules = config["rules"];
   if (!Array.isArray(rules)) rules = [];
@@ -315,7 +387,7 @@ function addCustomRules(config) {
 //   (3) 国内三层兜底：把漏网的国内流量导入「国内网站」UI
 //   (4) MATCH：所有未命中流量走总出口 PROXY_NAME
 // =============================================================================
-function overwriteRules(params) {
+function overwriteRules(config) {
   const ruleUrlMap = {
     "LAN": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Lan/Lan_No_Resolve.yaml",
     "国内网站": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
@@ -401,13 +473,13 @@ function overwriteRules(params) {
   ];
 
   // 合并（保留已有 providers，再叠加生成的）
-  params["rule-providers"] = {
-    ...(params["rule-providers"] || {}),
+  config["rule-providers"] = {
+    ...(config["rule-providers"] || {}),
     ...generatedProviders,
   };
 
   // 覆写 rules 为本脚本生成的版本（确保规则顺序可控）
-  params["rules"] = optimizedRules;
+  config["rules"] = optimizedRules;
 }
 
 
@@ -425,11 +497,11 @@ function overwriteRules(params) {
 // - 规则组：按 RULE_CONFIG 默认策略生成 select 组（让你在 UI 中可手动切换）
 // - 最后统一注入 icon：仅增强 UI 显示，不改变组结构
 // =============================================================================
-function overwriteProxyGroups(params) {
+function overwriteProxyGroups(config) {
   // 优先使用 main() 预收集的 _allProxyNames，否则直接读取 proxies
-  const allProxies = params._allProxyNames || (params["proxies"] || []).map((e) => e.name);
+  const allProxies = config._allProxyNames || (config["proxies"] || []).map((e) => e.name);
 
-  const manualNames = Array.isArray(params._manualProxyNames) ? params._manualProxyNames : [];
+  const manualNames = Array.isArray(config._manualProxyNames) ? config._manualProxyNames : [];
   const manualSet = new Set(manualNames);
 
   // 手动节点与普通节点分层
@@ -439,32 +511,13 @@ function overwriteProxyGroups(params) {
   // 硬规则：只有当“最终成功注入的手动节点”>0 时，链式体系才启用
   const chainEnabled = manualProxies.length > 0;
 
-  // 地区匹配正则（支持中文/英文/旗帜/常见缩写/数字后缀）
-  const regionFilterRegexs = [
-    {
-      name: "🇭🇰 Hong Kong",
-      regex: /香港|Hong[\s\-_]*Kong|🇭🇰|(?<![a-zA-Z])HKG(?![a-zA-Z])|(?<![a-zA-Z])HK\d*(?![a-zA-Z])/i,
-    },
-    {
-      name: "🇸🇬 Singapore",
-      regex: /新加坡|狮城|Singapore|🇸🇬|(?<![a-zA-Z])SIN(?![a-zA-Z])|(?<![a-zA-Z])SGP(?![a-zA-Z])|(?<![a-zA-Z])SG\d*(?![a-zA-Z])/i,
-    },
-    {
-      name: "🇯🇵 Japan",
-      regex: /日本|东京|大阪|Japan|Tokyo|Osaka|🇯🇵|(?<![a-zA-Z])JPN(?![a-zA-Z])|(?<![a-zA-Z])NRT(?![a-zA-Z])|(?<![a-zA-Z])KIX(?![a-zA-Z])|(?<![a-zA-Z])JP\d*(?![a-zA-Z])/i,
-    },
-    {
-      name: "🇺🇸 United States",
-      regex: /美国|洛杉矶|硅谷|西雅图|圣何塞|达拉斯|凤凰城|United[\s\-_]*States|America|🇺🇸|(?<![a-zA-Z])USA(?![a-zA-Z])|(?<![a-zA-Z])LAX(?![a-zA-Z])|(?<![a-zA-Z])SJC(?![a-zA-Z])|(?<![a-zA-Z])SEA(?![a-zA-Z])|(?<![a-zA-Z])DFW(?![a-zA-Z])|(?<![a-zA-Z])US\d*(?![a-zA-Z])/i,
-    },
-  ];
 
   // 地区测速组：url-test 自动选择延迟最优节点
   // - lazy=true：仅在使用该组时触发测速，减少无意义探测
   // - 默认排除手动节点：避免把“出口节点”混入测速体系造成语义混乱
   const regionProxyGroups = regionFilterRegexs
     .map((item) => {
-      const proxies = getProxiesByRegex(params, item.regex);
+      const proxies = getProxiesByRegex(config, item.regex);
       return {
         name: item.name,
         type: "url-test",
@@ -570,20 +623,56 @@ function overwriteProxyGroups(params) {
     return { name: ruleSetName, type: "select", proxies };
   });
 
+  const customRuleProxyGroups = Object.keys(CUSTOM_RULE_GROUPS).map((ruleSetName) => {
+    const defaultStrategy = CUSTOM_RULE_GROUPS[ruleSetName] && CUSTOM_RULE_GROUPS[ruleSetName].policy;
+    let proxies;
+
+    if (ruleSetName === "LAN") {
+      proxies = ["DIRECT"];
+    } else if (defaultStrategy === "DIRECT") {
+      proxies = [
+        "DIRECT",
+        PROXY_NAME,
+        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+        ...regionGroupNames,
+      ];
+    } else if (defaultStrategy === "REJECT") {
+      proxies = [
+        "REJECT",
+        "DIRECT",
+        PROXY_NAME,
+        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+        ...regionGroupNames,
+      ];
+    } else {
+      proxies = [
+        PROXY_NAME,
+        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+        ...regionGroupNames,
+        "DIRECT",
+      ];
+    }
+
+    return { name: ruleSetName, type: "select", proxies };
+  });
+
   // 汇总写回：
-  params["proxy-groups"] = [
+  config["proxy-groups"] = [
     proxyGroup,
     autoSelect,
     ...(chainEnabled ? [chainEntryGroup, chainExitGroup, chainRelayGroup] : []),
     ...ruleSetProxyGroups,
+    ...customRuleProxyGroups,
     ...regionProxyGroups,
   ].filter(Boolean);
 
   // 统一注入 icon（不改变 proxies/type 等逻辑）
-  params["proxy-groups"] = (params["proxy-groups"] || []).map(g => ({
-    ...g,
-    icon: GROUP_ICONS[g.name] || g.icon,
-  }));
+  config["proxy-groups"] = (config["proxy-groups"] || []).map(g => {
+    const icon = (CUSTOM_RULE_GROUPS[g.name] && CUSTOM_RULE_GROUPS[g.name].icon) !== undefined
+      ? CUSTOM_RULE_GROUPS[g.name].icon
+      : GROUP_ICONS[g.name];
+    return icon !== undefined ? { ...g, icon } : g;
+  });
 }
 
 
@@ -596,20 +685,7 @@ function overwriteProxyGroups(params) {
 // - 非国内优先用 DoH（nameserver）提升可用性与抗污染能力
 // 同时统一开启一些常用性能/体验选项（unified-delay、sniffer、tcp-concurrent 等）
 // =============================================================================
-function overwriteDns(params) {
-  // 国内 DNS：用于处理国内域名解析，避免绕路/解析慢
-  const cnDnsList = [
-    "223.5.5.5", "223.6.6.6",
-    "119.29.29.29", "119.28.28.28",
-  ];
-
-  // 可信 DoH：用于国际域名解析，降低污染概率
-  const trustDnsList = [
-    "https://cloudflare-dns.com/dns-query",
-    "https://dns.google/dns-query",
-    "https://1.1.1.1/dns-query",
-    "https://8.8.4.4/dns-query",
-  ];
+function overwriteDns(config) {
 
   const dnsOptions = {
     "enable": true,
@@ -653,6 +729,12 @@ function overwriteDns(params) {
     },
   };
 
+  // 写回 DNS 与其它选项（尽量合并，不破坏原有字段）
+  config.dns = { ...config.dns, ...dnsOptions };
+}
+
+
+function overwriteMiscOptions(config) {
   // Geo 数据库下载地址（geodata-mode + geox-url）
   // - 用于 GEOSITE/GEOIP 等匹配能力
   const geoxURLs = {
@@ -694,9 +776,7 @@ function overwriteDns(params) {
     "geox-url": geoxURLs,
   };
 
-  // 写回 DNS 与其它选项（尽量合并，不破坏原有字段）
-  params.dns = { ...params.dns, ...dnsOptions };
-  Object.keys(otherOptions).forEach((key) => { params[key] = otherOptions[key]; });
+  Object.keys(otherOptions).forEach((key) => { config[key] = otherOptions[key]; });
 }
 
 
@@ -706,9 +786,9 @@ function overwriteDns(params) {
 // - 优先使用 main() 预收集的 _allProxyNames，否则直接读取 proxies
 // - 默认排除"手动节点"：手动节点语义是"链式出口"，不参与地区测速/Auto 测速
 // =============================================================================
-function getProxiesByRegex(params, regex) {
-  const names = params._allProxyNames || (params.proxies || []).map((e) => e.name);
-  const manualNames = Array.isArray(params._manualProxyNames) ? params._manualProxyNames : [];
+function getProxiesByRegex(config, regex) {
+  const names = config._allProxyNames || (config.proxies || []).map((e) => e.name);
+  const manualNames = Array.isArray(config._manualProxyNames) ? config._manualProxyNames : [];
   const manualSet = new Set(manualNames);
 
   const base = manualNames.length > 0
