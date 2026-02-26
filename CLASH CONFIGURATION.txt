@@ -641,7 +641,18 @@ function overwriteDns(params) {
       "sniff": {
         "TLS": { "ports": [443, 8443] },
         "HTTP": { "ports": [80, "8080-8880"], "override-destination": true }
-      }
+      },
+      "skip-domain": [
+        "Mijia Cloud",
+        "+.apple.com",
+        "+.icloud.com",
+        "+.wechat.com",
+        "+.qq.com",
+        "+.qpic.cn",
+        "+.vivox.com",
+        "+.oray.com",
+        "+.sunlogin.net"
+      ]
     },
 
     // geodata-mode：启用 geosite/geoip 数据库能力
