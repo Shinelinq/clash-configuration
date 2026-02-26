@@ -413,10 +413,22 @@ function overwriteProxyGroups(params) {
 
   // 地区匹配正则（支持中文/英文/旗帜/常见缩写/数字后缀）
   const regionFilterRegexs = [
-    { name: "🇭🇰 Hong Kong", regex: /香港|Hong[-\s_]*Kong|HongKong|🇭🇰|HKG|HK(\d+)?/i },
-    { name: "🇸🇬 Singapore", regex: /新加坡|狮城|Singapore|🇸🇬|SIN|SGP|SG(\d+)?/i },
-    { name: "🇯🇵 Japan", regex: /日本|Japan|🇯🇵|JPN|JP(\d+)?/i },
-    { name: "🇺🇸 United States", regex: /美国|United\s*States|America|🇺🇸|USA|US(\d+)?/i },
+    {
+      name: "🇭🇰 Hong Kong",
+      regex: /香港|Hong[\s\-_]*Kong|🇭🇰|(?<![a-zA-Z])HKG(?![a-zA-Z])|(?<![a-zA-Z])HK\d*(?![a-zA-Z])/i,
+    },
+    {
+      name: "🇸🇬 Singapore",
+      regex: /新加坡|狮城|Singapore|🇸🇬|(?<![a-zA-Z])SIN(?![a-zA-Z])|(?<![a-zA-Z])SGP(?![a-zA-Z])|(?<![a-zA-Z])SG\d*(?![a-zA-Z])/i,
+    },
+    {
+      name: "🇯🇵 Japan",
+      regex: /日本|东京|大阪|Japan|Tokyo|Osaka|🇯🇵|(?<![a-zA-Z])JPN(?![a-zA-Z])|(?<![a-zA-Z])NRT(?![a-zA-Z])|(?<![a-zA-Z])KIX(?![a-zA-Z])|(?<![a-zA-Z])JP\d*(?![a-zA-Z])/i,
+    },
+    {
+      name: "🇺🇸 United States",
+      regex: /美国|洛杉矶|硅谷|西雅图|圣何塞|达拉斯|凤凰城|United[\s\-_]*States|America|🇺🇸|(?<![a-zA-Z])USA(?![a-zA-Z])|(?<![a-zA-Z])LAX(?![a-zA-Z])|(?<![a-zA-Z])SJC(?![a-zA-Z])|(?<![a-zA-Z])SEA(?![a-zA-Z])|(?<![a-zA-Z])DFW(?![a-zA-Z])|(?<![a-zA-Z])US\d*(?![a-zA-Z])/i,
+    },
   ];
 
   // 地区测速组：url-test 自动选择延迟最优节点
