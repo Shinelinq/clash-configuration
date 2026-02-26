@@ -615,19 +615,11 @@ function overwriteDns(params) {
 
   // Geo 数据库下载地址（geodata-mode + geox-url）
   // - 用于 GEOSITE/GEOIP 等匹配能力
-  const rawGeoxURLs = {
+  const geoxURLs = {
     "geoip": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip-lite.dat",
     "geosite": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat",
     "mmdb": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country-lite.mmdb",
   };
-
-  // 使用加速前缀（避免 GitHub 直连不稳定）
-  const githubPrefix = "https://fastgh.lainbo.com/";
-  const accelURLs = Object.fromEntries(
-    Object.entries(rawGeoxURLs).map(([key, githubUrl]) => [
-      key, `${githubPrefix}${githubUrl}`,
-    ])
-  );
 
   // 其它常用体验/性能选项
   const otherOptions = {
@@ -659,7 +651,7 @@ function overwriteDns(params) {
     "geodata-mode": true,
 
     // geox-url：指定 geosite/geoip/mmdb 下载地址
-    "geox-url": accelURLs,
+    "geox-url": geoxURLs,
   };
 
   // 写回 DNS 与其它选项（尽量合并，不破坏原有字段）
