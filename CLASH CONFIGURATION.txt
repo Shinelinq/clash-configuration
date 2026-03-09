@@ -708,6 +708,30 @@ function overwriteDns(config) {
       "time.*",
       "ntp.*",
       "id.qq.com",
+
+      // ========== 系统连通性检测 ==========
+      // Windows / macOS / Android / iOS 判断"是否联网"的探测地址
+      // 拿到假 IP → 系统误判为"无网络"，状态栏显示无连接
+      "+.msftconnecttest.com",
+      "+.msftncsi.com",
+      "captive.apple.com",
+      "connectivitycheck.gstatic.com",
+      "detectportal.firefox.com",
+
+      // ========== NTP 时间同步 ==========
+      // 假 IP → 校时失败 → 系统时间偏移 → 证书验证出错
+      "time.windows.com",
+      "time.apple.com",
+      "time.android.com",
+      "pool.ntp.org",
+      "+.pool.ntp.org",
+
+      // ========== 局域网设备（NAS / 打印机 / 路由器） ==========
+      "+.synology.com",
+      "+.tplinkwifi.net",
+      "melogin.cn",
+      "falogin.cn",
+      "+.nip.io",
     ],
 
     // default-nameserver：用于 bootstrap（避免 DoH 首次解析失败）
