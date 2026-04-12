@@ -94,27 +94,135 @@ const CHAIN_ENTRY_GROUP_NAME = "链路入口（中转节点）";
 const CHAIN_EXIT_GROUP_NAME = "链路出口（手动添加）";
 const CHAIN_RELAY_GROUP_NAME = "📡 链式代理";
 
-// ===================== 规则策略配置表（规则组默认行为） =====================
-// key   = 规则分组名称（必须与 rule-provider / proxy-group 名称保持一致）
-// value = 默认策略：
-//   DIRECT -> 默认直连（国内/局域网/不值得代理的流量）
-//   PROXY  -> 默认走代理（需要加速/不可直连）
-//   REJECT -> 默认拦截（广告等）
-//
-// 注意：这里只定义“每个分组在 UI 中的默认倾向”。
-// 真正的分流规则顺序/内容由 overwriteRules() 统一生成。
-const RULE_CONFIG = {
-  "LAN": "DIRECT",            // 局域网/内网资源，必须直连（避免内网绕路）
-  "国内网站": "DIRECT",        // 国内网站集合（ChinaMax 改名），默认直连
-  "全球媒体": "PROXY",         // 海外媒体集合，默认走代理
-  "OpenAI": "PROXY",          // ChatGPT / OpenAI 相关，默认走代理
-  "Gemini": "PROXY",          // Google Gemini 相关，默认走代理
-  "Google": "PROXY",          // Google，默认走代理
-  "GitHub": "PROXY",          // GitHub，默认走代理
-  "SteamCN": "DIRECT",        // Steam 国内部分（商店/国区相关），默认直连
-  "Steam": "PROXY",           // Steam 国际/社区等，默认代理
-  "PayPal": "PROXY",          // PayPal，默认代理
-  "广告拦截": "REJECT",        // 广告/追踪域名集合，默认拦截
+// ===================== 标准远程规则组（统一数据源） =====================
+// 说明：
+// - 这里统一维护“标准远程 rule-provider”的唯一数据源。
+// - name 必须同时作为：
+//   * rule-provider 名
+//   * RULE-SET 名
+//   * proxy-group 名
+// - policy 只描述该分组在 UI 中的默认倾向：
+//   DIRECT / PROXY / REJECT
+// - 顺序非常重要：数组顺序 = 远程 RULE-SET 顺序
+// - UI 中远程规则组的显示顺序由 REMOTE_RULESET_DISPLAY_ORDER 单独控制
+// - 本次采用“当前实际分流优先级”顺序，确保实际分流行为一致
+// - 以后新增一个标准远程规则组，只需要在这里新增一项
+const REMOTE_RULESETS = [
+  {
+    name: "LAN",
+    policy: "DIRECT",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Lan/Lan_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/WiFi.png",
+  },
+  {
+    name: "广告拦截",
+    policy: "REJECT",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AdvertisingLite/AdvertisingLite_Classical_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Reject.png",
+  },
+  {
+    name: "OpenAI",
+    policy: "PROXY",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OpenAI/OpenAI_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ChatGPT.png",
+  },
+  {
+    name: "Gemini",
+    policy: "PROXY",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Gemini/Gemini_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/AI.png",
+  },
+  {
+    name: "GitHub",
+    policy: "PROXY",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GitHub/GitHub_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/GitHub.png",
+  },
+  {
+    name: "Google",
+    policy: "PROXY",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Google/Google_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Google.png",
+  },
+  {
+    name: "PayPal",
+    policy: "PROXY",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/PayPal/PayPal_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/PayPal.png",
+  },
+  {
+    name: "SteamCN",
+    policy: "DIRECT",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/SteamCN/SteamCN_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png",
+  },
+  {
+    name: "Steam",
+    policy: "PROXY",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Steam/Steam_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png",
+  },
+  {
+    name: "全球媒体",
+    policy: "PROXY",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml",
+    // Qure Color 里没有 GlobalMedia.png，因此“全球媒体”使用 ForeignMedia 图标
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ForeignMedia.png",
+  },
+  {
+    name: "国内网站",
+    policy: "DIRECT",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/China.png",
+  },
+];
+
+// ===================== 远程规则组显示顺序（仅影响 UI） =====================
+// 说明：
+// - 这里只控制 proxy-groups 中“标准远程规则组”的显示顺序。
+// - 不影响 rule-provider 生成顺序，不影响远程 RULE-SET 的实际匹配顺序。
+// - 若写入了 REMOTE_RULESETS 中不存在的名称，会在生成时自动忽略。
+const REMOTE_RULESET_DISPLAY_ORDER = [
+  "LAN",
+  "国内网站",
+  "全球媒体",
+  "OpenAI",
+  "Gemini",
+  "Google",
+  "GitHub",
+  "SteamCN",
+  "Steam",
+  "PayPal",
+  "广告拦截",
+];
+
+// ===================== 规则骨架（独立于远程规则组） =====================
+// 说明：
+// - 这里保留“规则骨架”，不并入 REMOTE_RULESETS。
+// - 原因：这些规则属于系统兜底/安全保护，不是远程 rule-provider。
+// - 以后调整 LAN 本地保护、国内兜底、MATCH，请只改这里。
+const RULES_SKELETON = {
+  // 本地 LAN 硬兜底：即使远程规则集失效，也保证内网/本机资源永远直连
+  localProtection: [
+    "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+    "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
+    "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+    "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
+    "IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
+    "DOMAIN-SUFFIX,local,DIRECT",
+    "DOMAIN-SUFFIX,lan,DIRECT",
+  ],
+
+  // 国内两层兜底：把漏网但实际属于国内的流量导入「国内网站」UI
+  domesticFallback: [
+    "GEOSITE,cn,国内网站",
+    "GEOIP,CN,国内网站,no-resolve",
+  ],
+
+  // 最终兜底：所有未命中流量走总出口
+  finalFallback: [
+    "MATCH," + PROXY_NAME,
+  ],
 };
 
 // ===================== 分组图标映射（纯 UI，不影响逻辑） =====================
@@ -124,24 +232,6 @@ const GROUP_ICONS = {
   // 总出口与自动测速组
   "Proxy": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Proxy.png",
   "🌏 Auto": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Auto.png",
-
-  // 规则分组
-  "LAN": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/WiFi.png",
-  // Qure Color 里没有 GlobalMedia.png，因此“全球媒体”使用 ForeignMedia 图标
-  "全球媒体": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ForeignMedia.png",
-  "国内网站": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/China.png",
-  "广告拦截": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Reject.png",
-
-  "OpenAI": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ChatGPT.png",
-  "Gemini": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/AI.png",
-
-  "GitHub": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/GitHub.png",
-  "Google": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Google.png",
-
-  "SteamCN": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png",
-  "Steam": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png",
-
-  "PayPal": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/PayPal.png",
 
   // 链式代理相关
   [CHAIN_ENTRY_GROUP_NAME]: "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Rocket.png",
@@ -154,6 +244,13 @@ const GROUP_ICONS = {
   "🇯🇵 Japan": "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Japan.png",
   "🇺🇸 United States": "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/United_States.png",
 };
+
+// 远程规则组图标映射：统一从 REMOTE_RULESETS 派生，避免 UI 信息多处维护
+const REMOTE_RULESET_ICONS = Object.fromEntries(
+  REMOTE_RULESETS
+    .filter(item => item.icon !== undefined)
+    .map(item => [item.name, item.icon])
+);
 
 const CUSTOM_RULE_GROUPS = {
   "linux.do": {
@@ -379,97 +476,45 @@ function addCustomRules(config) {
 // =============================================================================
 // 3) 规则与规则集（rule-providers + rules）
 // -----------------------------------------------------------------------------
-// - ruleUrlMap：每个策略组对应一个远程规则集地址
-// - generatedProviders：根据 RULE_CONFIG 生成 providers
-// - optimizedRules：最终 rules 顺序（上高下低）
-//   (1) 本地 LAN 硬兜底：即使远程规则失效也确保内网直连
-//   (2) 各业务 RULE-SET：按业务分流
-//   (3) 国内三层兜底：把漏网的国内流量导入「国内网站」UI
-//   (4) MATCH：所有未命中流量走总出口 PROXY_NAME
+// - 标准远程规则组统一由 REMOTE_RULESETS 管理：
+//   * rule-provider 地址
+//   * RULE-SET 顺序
+//   * 默认策略语义（供 proxy-group 复用）
+// - RULES_SKELETON 继续独立保留：
+//   * LAN 本地硬编码保护
+//   * 国内兜底
+//   * MATCH 最终兜底
+// - CUSTOM_RULE_GROUPS 不参与这里的远程规则生成，它仍由 addCustomRules() 插入
 // =============================================================================
 function overwriteRules(config) {
-  const ruleUrlMap = {
-    "LAN": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Lan/Lan_No_Resolve.yaml",
-    "国内网站": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
-    "SteamCN": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/SteamCN/SteamCN_No_Resolve.yaml",
-    "OpenAI": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OpenAI/OpenAI_No_Resolve.yaml",
-    "Gemini": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Gemini/Gemini_No_Resolve.yaml",
-    "GitHub": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GitHub/GitHub_No_Resolve.yaml",
-    "Google": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Google/Google_No_Resolve.yaml",
-    "PayPal": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/PayPal/PayPal_No_Resolve.yaml",
-    "Steam": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Steam/Steam_No_Resolve.yaml",
-    "全球媒体": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml",
-    "广告拦截": "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AdvertisingLite/AdvertisingLite_Classical_No_Resolve.yaml",
-  };
-
-  // 根据 RULE_CONFIG 生成 rule-providers（只生成 ruleUrlMap 中存在的）
-  const generatedProviders = {};
-  Object.keys(RULE_CONFIG).forEach((key) => {
-    if (ruleUrlMap[key]) {
-      generatedProviders[key] = {
-        type: "http",                  // 远程拉取
-        behavior: "classical",         // classical 规则集
-        url: ruleUrlMap[key],          // 规则源地址
-        path: `./ruleset/${key}.yaml`, // 本地缓存路径
-        interval: 86400,               // 1 天更新一次
+  const generatedProviders = Object.fromEntries(
+    REMOTE_RULESETS.map((item) => [
+      item.name,
+      {
+        type: "http",                        // 远程拉取
+        behavior: "classical",               // classical 规则集
+        url: item.url,                       // 规则源地址
+        path: `./ruleset/${item.name}.yaml`, // 本地缓存路径
+        interval: 86400,                     // 1 天更新一次
         format: "yaml",
-      };
-    }
+      },
+    ])
+  );
+
+  // 远程 RULE-SET 引用：严格按 REMOTE_RULESETS 的数组顺序生成
+  // 注意：LAN 仍然写死 DIRECT，避免误操作导致内网流量绕路；
+  // 其余远程规则组继续指向各自同名 proxy-group，保持原语义不变。
+  const remoteRuleSetRules = REMOTE_RULESETS.map((item) => {
+    const target = item.name === "LAN" ? "DIRECT" : item.name;
+    return `RULE-SET,${item.name},${target},no-resolve`;
   });
 
   // 最终 rules：顺序即优先级（上高下低）
   const optimizedRules = [
-    // -----------------------------------------------------------------------
-    // (1) 本地 LAN 硬兜底：不依赖远程规则集
-    // 目的：即使远程规则集失效，也保证内网/本机资源永远直连。
-    // 注意：LAN 规则写死 DIRECT，不导入「国内网站」UI，
-    //      防止你把“国内网站”误切到 Proxy 后导致内网访问绕路。
-    // -----------------------------------------------------------------------
-    "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
-    "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
-    "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
-    "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
-    "IP-CIDR,169.254.0.0/16,DIRECT,no-resolve",
-    "DOMAIN-SUFFIX,local,DIRECT",
-    "DOMAIN-SUFFIX,lan,DIRECT",
-
-    // -----------------------------------------------------------------------
-    // (2) 远程规则集引用：按业务优先分流
-    // 说明：这些规则集应当在“国内兜底”之前，避免海外业务被误判为国内。
-    // -----------------------------------------------------------------------
-    "RULE-SET,LAN,DIRECT,no-resolve",
-    "RULE-SET,广告拦截,广告拦截,no-resolve",
-    "RULE-SET,OpenAI,OpenAI,no-resolve",
-    "RULE-SET,Gemini,Gemini,no-resolve",
-    "RULE-SET,GitHub,GitHub,no-resolve",
-    "RULE-SET,Google,Google,no-resolve",
-    "RULE-SET,PayPal,PayPal,no-resolve",
-    "RULE-SET,SteamCN,SteamCN,no-resolve",
-    "RULE-SET,Steam,Steam,no-resolve",
-    "RULE-SET,全球媒体,全球媒体,no-resolve",
-    "RULE-SET,国内网站,国内网站,no-resolve",
-
-    // -----------------------------------------------------------------------
-    // (3) 国内三层兜底：把“漏网但实际是国内”的流量统一导入「国内网站」UI
-    // 目的：解决多端（尤其手机 APP）常见的“域名杂 / 直连 IP / 新域名未收录”
-    //      导致的漏匹配，否则这些流量会掉到 MATCH -> Proxy。
-    //
-    // 三层含义：
-    // - 第一层：ChinaMax（上一行 RULE-SET 已完成，属于业务级国内集合）
-    // - 第二层：GEOSITE,cn（域名地理兜底：域名被判定为 CN 相关）
-    // - 第三层：GEOIP,CN（IP 地理兜底：目标 IP 位于 CN）
-    //
-    // 为什么这里指向「国内网站」而不是写死 DIRECT？
-    // - 保留 UI 语义：你只需要在 UI 中控制“国内网站”一个组；
-    // - 默认可选 DIRECT，必要时也可临时切到 Proxy/Relay/地区节点。
-    // -----------------------------------------------------------------------
-    "GEOSITE,cn,国内网站",
-    "GEOIP,CN,国内网站,no-resolve",
-
-    // -----------------------------------------------------------------------
-    // (4) 最终兜底：全部未命中流量走总出口
-    // -----------------------------------------------------------------------
-    "MATCH," + PROXY_NAME,
+    ...RULES_SKELETON.localProtection,
+    ...remoteRuleSetRules,
+    ...RULES_SKELETON.domesticFallback,
+    ...RULES_SKELETON.finalFallback,
   ];
 
   // 合并（保留已有 providers，再叠加生成的）
@@ -480,6 +525,45 @@ function overwriteRules(config) {
 
   // 覆写 rules 为本脚本生成的版本（确保规则顺序可控）
   config["rules"] = optimizedRules;
+}
+
+// =============================================================================
+// 辅助函数：根据策略语义生成 select 组候选项
+// -----------------------------------------------------------------------------
+// - 该函数只负责把 DIRECT / PROXY / REJECT 语义翻译成候选顺序
+// - 标准远程规则组与本地自定义规则组都会复用它
+// - LAN 仍然是特例：只允许 DIRECT，防止误操作导致内网绕路
+// =============================================================================
+function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabled) {
+  if (groupName === "LAN") {
+    return ["DIRECT"];
+  }
+
+  if (policy === "DIRECT") {
+    return [
+      "DIRECT",
+      PROXY_NAME,
+      ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+      ...regionGroupNames,
+    ];
+  }
+
+  if (policy === "REJECT") {
+    return [
+      "REJECT",
+      "DIRECT",
+      PROXY_NAME,
+      ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+      ...regionGroupNames,
+    ];
+  }
+
+  return [
+    PROXY_NAME,
+    ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+    ...regionGroupNames,
+    "DIRECT",
+  ];
 }
 
 
@@ -494,7 +578,9 @@ function overwriteRules(config) {
 //   * 链路出口：仅手动节点
 //   * 📡 链式代理：relay(入口组, 出口组)
 // - 总出口 Proxy：Auto -> (可选 chain relay) -> 地区组 -> normalProxies -> DIRECT
-// - 规则组：按 RULE_CONFIG 默认策略生成 select 组（让你在 UI 中可手动切换）
+// - 规则组：
+//   * 标准远程规则组：按 REMOTE_RULESET_DISPLAY_ORDER 控制显示顺序
+//   * 本地自定义规则组：按 CUSTOM_RULE_GROUPS 默认策略生成 select 组
 // - 最后统一注入 icon：仅增强 UI 显示，不改变组结构
 // =============================================================================
 function overwriteProxyGroups(config) {
@@ -584,76 +670,28 @@ function overwriteProxyGroups(config) {
     ],
   };
 
-  // 为每个规则策略组生成一个 select：让你手动切换该类流量走向
+  // 标准远程规则组：
+  // - 元数据继续来自 REMOTE_RULESETS
+  // - 显示顺序改由 REMOTE_RULESET_DISPLAY_ORDER 控制
   // 注意：各规则组只注入 relay（若启用），不注入手动节点本体
-  const ruleSetProxyGroups = Object.keys(RULE_CONFIG).map((ruleSetName) => {
-    const defaultStrategy = RULE_CONFIG[ruleSetName];
-    let proxies;
-
-    // LAN 组只允许 DIRECT：避免误操作导致内网绕路
-    if (ruleSetName === "LAN") {
-      proxies = ["DIRECT"];
-    } else if (defaultStrategy === "DIRECT") {
-      // 默认直连：优先 DIRECT，其次 Proxy，再给 relay/地区组作为可选
-      proxies = [
-        "DIRECT",
-        PROXY_NAME,
-        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
-        ...regionGroupNames,
-      ];
-    } else if (defaultStrategy === "REJECT") {
-      // 拦截：默认 REJECT，同时留 DIRECT/PROXY/relay 作为容错
-      proxies = [
-        "REJECT",
-        "DIRECT",
-        PROXY_NAME,
-        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
-        ...regionGroupNames,
-      ];
-    } else {
-      // 默认代理：优先 Proxy，其次 relay，再地区组，保留 DIRECT 应急
-      proxies = [
-        PROXY_NAME,
-        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
-        ...regionGroupNames,
-        "DIRECT",
-      ];
-    }
-
-    return { name: ruleSetName, type: "select", proxies };
-  });
+  const remoteRuleSetMap = Object.fromEntries(REMOTE_RULESETS.map((item) => [item.name, item]));
+  const ruleSetProxyGroups = REMOTE_RULESET_DISPLAY_ORDER
+    .map((name) => remoteRuleSetMap[name])
+    .filter(Boolean)
+    .map((item) => ({
+      name: item.name,
+      type: "select",
+      proxies: buildPolicyGroupProxies(item.name, item.policy, regionGroupNames, chainEnabled),
+    }));
 
   const customRuleProxyGroups = Object.keys(CUSTOM_RULE_GROUPS).map((ruleSetName) => {
     const defaultStrategy = CUSTOM_RULE_GROUPS[ruleSetName] && CUSTOM_RULE_GROUPS[ruleSetName].policy;
-    let proxies;
 
-    if (ruleSetName === "LAN") {
-      proxies = ["DIRECT"];
-    } else if (defaultStrategy === "DIRECT") {
-      proxies = [
-        "DIRECT",
-        PROXY_NAME,
-        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
-        ...regionGroupNames,
-      ];
-    } else if (defaultStrategy === "REJECT") {
-      proxies = [
-        "REJECT",
-        "DIRECT",
-        PROXY_NAME,
-        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
-        ...regionGroupNames,
-      ];
-    } else {
-      proxies = [
-        PROXY_NAME,
-        ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
-        ...regionGroupNames,
-        "DIRECT",
-      ];
-    }
-
-    return { name: ruleSetName, type: "select", proxies };
+    return {
+      name: ruleSetName,
+      type: "select",
+      proxies: buildPolicyGroupProxies(ruleSetName, defaultStrategy, regionGroupNames, chainEnabled),
+    };
   });
 
   // 汇总写回：
@@ -670,7 +708,7 @@ function overwriteProxyGroups(config) {
   config["proxy-groups"] = (config["proxy-groups"] || []).map(g => {
     const icon = (CUSTOM_RULE_GROUPS[g.name] && CUSTOM_RULE_GROUPS[g.name].icon) !== undefined
       ? CUSTOM_RULE_GROUPS[g.name].icon
-      : GROUP_ICONS[g.name];
+      : (REMOTE_RULESET_ICONS[g.name] !== undefined ? REMOTE_RULESET_ICONS[g.name] : GROUP_ICONS[g.name]);
     return icon !== undefined ? { ...g, icon } : g;
   });
 }
