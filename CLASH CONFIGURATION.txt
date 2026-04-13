@@ -106,6 +106,9 @@ const CHAIN_RELAY_GROUP_NAME = "📡 链式代理";
 // - 顺序非常重要：数组顺序 = 远程 RULE-SET 顺序
 // - UI 中远程规则组的显示顺序由 REMOTE_RULESET_DISPLAY_ORDER 单独控制
 // - 本次采用“当前实际分流优先级”顺序，确保实际分流行为一致
+// - 可选扩展字段（全部可省略）：
+//   * behavior / format / interval / path / noResolve
+//   * 未填写时，会自动回退到当前脚本的默认行为
 // - 以后新增一个标准远程规则组，只需要在这里新增一项
 const REMOTE_RULESETS = [
   {
@@ -194,8 +197,8 @@ const REMOTE_RULESET_DISPLAY_ORDER = [
   "全球媒体",
   "OpenAI",
   "Gemini",
-  "Google",
   "Grok",
+  "Google",
   "GitHub",
   "SteamCN",
   "Steam",
@@ -481,6 +484,37 @@ function addCustomRules(config) {
 
 
 // =============================================================================
+// 辅助函数：生成远程规则组的 provider 配置（支持向后兼容扩展字段）
+// -----------------------------------------------------------------------------
+// - 仅负责把 REMOTE_RULESETS 某一项转换成 rule-provider 配置
+// - 如果未来某个远程规则组需要单独指定 behavior / format / interval / path，
+//   只需要在对应项上填写；未填写时保持当前默认值不变
+// =============================================================================
+function getRemoteRulesetProviderConfig(item) {
+  return {
+    type: "http", // 远程拉取
+    behavior: item.behavior !== undefined ? item.behavior : "classical",
+    url: item.url,
+    path: item.path !== undefined ? item.path : `./ruleset/${item.name}.yaml`,
+    interval: item.interval !== undefined ? item.interval : 86400,
+    format: item.format !== undefined ? item.format : "yaml",
+  };
+}
+
+// =============================================================================
+// 辅助函数：生成远程 RULE-SET 规则行（支持 noResolve 向后兼容扩展）
+// -----------------------------------------------------------------------------
+// - LAN 仍然强制写死 DIRECT，避免内网流量被错误导向其它策略组
+// - noResolve 仅在显式写成 false 时取消追加；其它情况全部保持当前行为
+// =============================================================================
+function buildRuleSetRule(item) {
+  const target = item.name === "LAN" ? "DIRECT" : item.name;
+  return item.noResolve === false
+    ? `RULE-SET,${item.name},${target}`
+    : `RULE-SET,${item.name},${target},no-resolve`;
+}
+
+// =============================================================================
 // 3) 规则与规则集（rule-providers + rules）
 // -----------------------------------------------------------------------------
 // - 标准远程规则组统一由 REMOTE_RULESETS 管理：
@@ -497,24 +531,14 @@ function overwriteRules(config) {
   const generatedProviders = Object.fromEntries(
     REMOTE_RULESETS.map((item) => [
       item.name,
-      {
-        type: "http",                        // 远程拉取
-        behavior: "classical",               // classical 规则集
-        url: item.url,                       // 规则源地址
-        path: `./ruleset/${item.name}.yaml`, // 本地缓存路径
-        interval: 86400,                     // 1 天更新一次
-        format: "yaml",
-      },
+      getRemoteRulesetProviderConfig(item),
     ])
   );
 
   // 远程 RULE-SET 引用：严格按 REMOTE_RULESETS 的数组顺序生成
   // 注意：LAN 仍然写死 DIRECT，避免误操作导致内网流量绕路；
   // 其余远程规则组继续指向各自同名 proxy-group，保持原语义不变。
-  const remoteRuleSetRules = REMOTE_RULESETS.map((item) => {
-    const target = item.name === "LAN" ? "DIRECT" : item.name;
-    return `RULE-SET,${item.name},${target},no-resolve`;
-  });
+  const remoteRuleSetRules = REMOTE_RULESETS.map((item) => buildRuleSetRule(item));
 
   // 最终 rules：顺序即优先级（上高下低）
   const optimizedRules = [
