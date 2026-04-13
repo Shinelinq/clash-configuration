@@ -641,13 +641,14 @@ function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabl
 // - 它不负责真实 rules 的执行顺序；不要把 proxy-groups 的顺序误认为 rules 的匹配顺序。
 // - 这里同样会读取远程规则组信息，但只用于生成可选策略组，不改写 overwriteRules() 的实际匹配顺序。
 // 生成内容：
-// - 地区测速组：按正则从节点名筛选香港/新加坡/日本/美国（默认排除手动节点）
-// - 🌏 Auto：对普通节点做 url-test（手动节点永不参与测速）
+// - 地区测速组：按正则从普通节点中筛选香港/新加坡/日本/美国（仅 normalProxies 存在时生成）
+// - 🌏 Auto：对普通节点做 url-test（仅 normalProxies 存在时生成，手动节点永不参与测速）
 // - 链式代理（relay）：仅当手动出口节点注入成功后生成
-//   * 链路入口：🌏 Auto + normalProxies + DIRECT
+//   * 链路入口：有普通节点时为「🌏 Auto + normalProxies + DIRECT」；仅手动节点时退化为「DIRECT」
 //   * 链路出口：仅手动节点
 //   * 📡 链式代理：relay(入口组, 出口组)
-// - 总出口 Proxy：Auto -> (可选 chain relay) -> 地区组 -> normalProxies -> DIRECT
+// - 总出口 Proxy：有普通节点时为「Auto -> (可选 chain relay) -> 地区组 -> normalProxies -> DIRECT」
+//                  仅手动节点时为「(可选 chain relay) -> DIRECT」
 // - 规则组：
 //   * 标准远程规则组：按 REMOTE_RULESET_DISPLAY_ORDER 控制显示顺序
 //   * 本地自定义规则组：按 CUSTOM_RULE_GROUPS 默认策略生成 select 组
@@ -663,49 +664,55 @@ function overwriteProxyGroups(config) {
   // 手动节点与普通节点分层
   const manualProxies = allProxies.filter(n => manualSet.has(n));
   const normalProxies = allProxies.filter(n => !manualSet.has(n));
+  const hasNormalProxies = normalProxies.length > 0;
+  const hasManualProxies = manualProxies.length > 0;
 
   // 硬规则：只有当“最终成功注入的手动节点”>0 时，链式体系才启用
-  const chainEnabled = manualProxies.length > 0;
+  const chainEnabled = hasManualProxies;
 
 
-  // 地区测速组：url-test 自动选择延迟最优节点
-  // - lazy=true：仅在使用该组时触发测速，减少无意义探测
-  // - 默认排除手动节点：避免把“出口节点”混入测速体系造成语义混乱
-  const regionProxyGroups = regionFilterRegexs
-    .map((item) => {
-      const proxies = getProxiesByRegex(config, item.regex);
-      return {
-        name: item.name,
+  // 地区测速组属于“普通节点测速组”，仅在存在 normalProxies 时生成；
+  // 这里只是 UI / 交互层优化，不改变 overwriteRules() 的真实匹配顺序。
+  const regionProxyGroups = hasNormalProxies
+    ? regionFilterRegexs
+        .map((item) => {
+          const proxies = getProxiesByRegex(config, item.regex);
+          return {
+            name: item.name,
+            type: "url-test",
+            url: TEST_URL,
+            interval: TEST_INTERVAL,
+            tolerance: TEST_TOLERANCE,
+            proxies,
+            lazy: true,
+          };
+        })
+        // 没匹配到任何节点的地区组就不生成，避免空组污染界面
+        .filter((item) => item.proxies.length > 0)
+    : [];
+
+  const regionGroupNames = regionProxyGroups.map((g) => g.name);
+
+  // 🌏 Auto 只服务普通节点测速；仅手动节点时不生成该组。
+  const autoSelect = hasNormalProxies
+    ? {
+        name: "🌏 Auto",
         type: "url-test",
         url: TEST_URL,
         interval: TEST_INTERVAL,
         tolerance: TEST_TOLERANCE,
-        proxies,
+        proxies: [...normalProxies],
         lazy: true,
-      };
-    })
-    // 没匹配到任何节点的地区组就不生成，避免空组污染界面
-    .filter((item) => item.proxies.length > 0);
-
-  const regionGroupNames = regionProxyGroups.map((g) => g.name);
-
-  // 全局自动测速组：只对 normalProxies 做 url-test（手动节点永不参与）
-  const autoSelect = {
-    name: "🌏 Auto",
-    type: "url-test",
-    url: TEST_URL,
-    interval: TEST_INTERVAL,
-    tolerance: TEST_TOLERANCE,
-    proxies: [...normalProxies],
-    lazy: true,
-  };
+      }
+    : null;
 
   // ---------------- 链式代理三件套（仅 chainEnabled 时生成） ----------------
   const chainEntryGroup = chainEnabled
     ? {
         name: CHAIN_ENTRY_GROUP_NAME,
         type: "select",
-        proxies: ["🌏 Auto", ...normalProxies, "DIRECT"],
+        // 仅手动节点场景下，链式代理仍可保留，但入口只剩 DIRECT。
+        proxies: hasNormalProxies ? ["🌏 Auto", ...normalProxies, "DIRECT"] : ["DIRECT"],
       }
     : null;
 
@@ -732,9 +739,9 @@ function overwriteProxyGroups(config) {
     name: PROXY_NAME,
     type: "select",
     proxies: [
-      "🌏 Auto",
+      ...(hasNormalProxies ? ["🌏 Auto"] : []),
       ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
-      ...regionGroupNames,
+      ...(hasNormalProxies ? regionGroupNames : []),
       ...normalProxies,
       "DIRECT",
     ],
