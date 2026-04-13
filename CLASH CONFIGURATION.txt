@@ -153,6 +153,12 @@ const REMOTE_RULESETS = [
     icon: "https://x.ai/favicon.ico",
   },
   {
+    name: "Claude",
+    policy: "PROXY",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Claude/Claude_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-png@latest/light/claude-color.png",
+  },
+  {
     name: "GitHub",
     policy: "PROXY",
     url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GitHub/GitHub_No_Resolve.yaml",
@@ -211,6 +217,7 @@ const REMOTE_RULESET_DISPLAY_ORDER = [
   "OpenAI",
   "Gemini",
   "Grok",
+  "Claude",
   "Google",
   "GitHub",
   "SteamCN",
