@@ -94,22 +94,33 @@ const CHAIN_ENTRY_GROUP_NAME = "链路入口（中转节点）";
 const CHAIN_EXIT_GROUP_NAME = "链路出口（手动添加）";
 const CHAIN_RELAY_GROUP_NAME = "📡 链式代理";
 
+// ===================== 规则职责分层总览（维护必读） =====================
+// 说明：
+// - REMOTE_RULESETS：标准远程规则组元数据；这里的数组顺序会进入真实 rules，属于“行为层顺序”。
+// - RULES_SKELETON：规则骨架 / 系统兜底 / 安全保护；这里定义 LAN 本地保护、国内兜底、MATCH。
+// - CUSTOM_RULE_GROUPS：本地自定义规则；由 addCustomRules() 插入到第一条远程 RULE-SET 之前。
+// - 最终匹配骨架固定为：
+//   LAN 本地硬编码保护 -> 本地自定义规则 -> 远程规则集 -> 国内兜底 -> MATCH
+// - 维护提示：不要把 proxy-groups 的显示顺序误认为 rules 的实际执行顺序。
+
 // ===================== 标准远程规则组（统一数据源） =====================
 // 说明：
-// - 这里统一维护“标准远程 rule-provider”的唯一数据源。
+// - 这里统一维护“标准远程 rule-provider / RULE-SET / 同名 proxy-group”的唯一数据源。
 // - name 必须同时作为：
 //   * rule-provider 名
 //   * RULE-SET 名
 //   * proxy-group 名
 // - policy 只描述该分组在 UI 中的默认倾向：
 //   DIRECT / PROXY / REJECT
-// - 顺序非常重要：数组顺序 = 远程 RULE-SET 顺序
-// - UI 中远程规则组的显示顺序由 REMOTE_RULESET_DISPLAY_ORDER 单独控制
-// - 本次采用“当前实际分流优先级”顺序，确保实际分流行为一致
+// - 维护提示：这里的数组顺序会影响远程 RULE-SET 的生成顺序，也会影响真实规则匹配优先级。
+// - 不要把这里理解成单纯展示顺序；修改这里属于“行为层修改”，不是 UI 调整。
+// - UI 中远程规则组的显示顺序由 REMOTE_RULESET_DISPLAY_ORDER 单独控制，两者不要混用。
+// - 本次采用“当前实际分流优先级”顺序，确保真实分流行为与当前脚本保持一致。
 // - 可选扩展字段（全部可省略）：
 //   * behavior / format / interval / path / noResolve
 //   * 未填写时，会自动回退到当前脚本的默认行为
-// - 以后新增一个标准远程规则组，只需要在这里新增一项
+// - 新增一个标准远程规则组时，主要入口先改这里。
+// - 若还希望它在 UI 中出现或按指定位置显示，再同步检查 REMOTE_RULESET_DISPLAY_ORDER。
 const REMOTE_RULESETS = [
   {
     name: "LAN",
@@ -188,8 +199,10 @@ const REMOTE_RULESETS = [
 
 // ===================== 远程规则组显示顺序（仅影响 UI） =====================
 // 说明：
-// - 这里只控制 proxy-groups 中“标准远程规则组”的显示顺序。
+// - 这里只控制 proxy-groups 中“标准远程规则组”的显示顺序，属于“显示层调整”。
 // - 不影响 rule-provider 生成顺序，不影响远程 RULE-SET 的实际匹配顺序。
+// - 修改这里不会改变分流逻辑；不要把 proxy-groups 的显示顺序误认为 rules 的执行顺序。
+// - 新增远程规则组时，如果希望它在 UI 中出现，也要同步补这里。
 // - 若写入了 REMOTE_RULESETS 中不存在的名称，会在生成时自动忽略。
 const REMOTE_RULESET_DISPLAY_ORDER = [
   "LAN",
@@ -206,11 +219,13 @@ const REMOTE_RULESET_DISPLAY_ORDER = [
   "广告拦截",
 ];
 
-// ===================== 规则骨架（独立于远程规则组） =====================
+// ===================== 规则骨架（系统级行为层，独立于远程规则组） =====================
 // 说明：
-// - 这里保留“规则骨架”，不并入 REMOTE_RULESETS。
-// - 原因：这些规则属于系统兜底/安全保护，不是远程 rule-provider。
-// - 以后调整 LAN 本地保护、国内兜底、MATCH，请只改这里。
+// - 这里保留“规则骨架”，不并入 REMOTE_RULESETS，也不是普通规则组配置。
+// - 原因：这些规则属于系统兜底 / 安全保护，不是远程 rule-provider 元数据。
+// - 这里定义的是整个分流体系的骨架，而不是某个单独规则组的显示信息。
+// - 改动这里往往属于系统级行为调整，应谨慎。
+// - 以后若要调整 LAN 本地保护、国内兜底、MATCH，请只改这里。
 const RULES_SKELETON = {
   // 本地 LAN 硬兜底：即使远程规则集失效，也保证内网/本机资源永远直连
   localProtection: [
@@ -262,6 +277,14 @@ const REMOTE_RULESET_ICONS = Object.fromEntries(
     .map(item => [item.name, item.icon])
 );
 
+// ===================== 本地自定义规则组（本地特权层） =====================
+// 说明：
+// - 这里维护的是“本地自定义规则 + 对应策略组元数据”，用于放你自己想优先命中的站点或域名。
+// - 它不是 REMOTE_RULESETS：不会参与 rule-provider 生成，也不是标准远程规则集元数据。
+// - 它也不是 RULES_SKELETON：不负责 LAN 本地保护、国内兜底、MATCH 这类系统骨架。
+// - 实际规则会由 addCustomRules() 插入到第一条远程 RULE-SET 之前，
+//   所以优先级高于所有远程规则集，但仍低于 RULES_SKELETON.localProtection。
+// - 维护提示：这里只定义“本地自定义规则层”的内容，不要和远程规则层、骨架层混在一起改。
 const CUSTOM_RULE_GROUPS = {
   "linux.do": {
     policy: "PROXY",
@@ -358,9 +381,13 @@ function isValidManualProxy(raw) {
 // =============================================================================
 // 主入口：把“客户端加载到的 config”加工成你想要的最终配置
 // -----------------------------------------------------------------------------
-// 顺序非常关键：
-// - overwriteRules / overwriteProxyGroups / overwriteDns 负责“框架化输出”
-// - addCustomRules 最后插入你的本地特权规则，插到 LAN 硬编码之后、远程规则集之前
+// 说明：
+// - overwriteRules() 负责生成真实 rules / rule-providers，是实际匹配顺序的核心来源之一。
+// - overwriteProxyGroups() 负责生成 UI 中的策略组与候选项，不决定真实 rules 的执行顺序。
+// - 调用顺序不要误解为最终匹配顺序：
+//   addCustomRules() 虽然最后调用，但它会把本地自定义规则插到第一条远程 RULE-SET 之前。
+// - 因此最终匹配骨架仍然是：
+//   LAN 本地硬编码保护 -> 本地自定义规则 -> 远程规则集 -> 国内兜底 -> MATCH
 // =============================================================================
 function main(config) {
   // 基本校验：防止 config 为 null/undefined
@@ -429,10 +456,10 @@ function main(config) {
 
     // ---------- (C) 流水线加工 ----------
     overwriteRules(config);        // 生成 rule-providers + rules
-    overwriteProxyGroups(config);  // 生成 proxy-groups（含地区测速组与规则组 + 链式代理组）
+    overwriteProxyGroups(config);  // 生成 proxy-groups（UI 层：地区测速组、规则组、链式代理组）
     overwriteDns(config);          // 覆写 DNS 与相关高级选项
     overwriteMiscOptions(config);
-    addCustomRules(config);        // 把自定义规则插到 LAN 硬编码之后、远程规则集之前
+    addCustomRules(config);        // 虽然这里最后执行，但会把本地自定义规则插到第一条远程 RULE-SET 之前；不要误解为“后调用 = 后匹配”
 
     // 清理内部临时字段，避免污染传给内核的 config
     delete config._allProxyNames;
@@ -454,9 +481,10 @@ function main(config) {
 // =============================================================================
 // 2) 自定义规则：本地特权通道（高优先级，仅次于 LAN 保护）
 // -----------------------------------------------------------------------------
-// 这里放你"最想优先命中"的规则（例如自己的常用站点）。
-// 这些规则会插到 LAN 硬编码之后、远程规则集之前，
-// 优先级很高但不会覆盖内网直连保护。
+// 这里放你“最想优先命中”的本地规则（例如自己的常用站点）。
+// 这些规则会插到第一条远程 RULE-SET 之前，因此优先于所有远程规则集。
+// 但它们仍然位于 RULES_SKELETON.localProtection 之后，不会覆盖 LAN 本地硬编码保护。
+// 维护提示：这里处理的是“本地自定义规则的实际插入位置”，不是 UI 显示顺序。
 // =============================================================================
 function addCustomRules(config) {
   const customRules = [];
@@ -471,8 +499,9 @@ function addCustomRules(config) {
 
   let rules = config["rules"];
   if (!Array.isArray(rules)) rules = [];
-  // 插在第一条 RULE-SET 之前（LAN 硬编码之后、远程规则集之前）
-  // 自定义规则优先级仍然很高，但不会覆盖内网直连保护
+  // 维护提示：这里按“第一条 RULE-SET 的位置”回插。
+  // 所以即使 addCustomRules() 在 main() 里最后调用，最终顺序仍然是：
+  // LAN 本地硬编码保护 -> 本地自定义规则 -> 远程规则集 -> ...
   const insertIndex = rules.findIndex(r => typeof r === "string" && r.startsWith("RULE-SET,"));
   if (insertIndex >= 0) {
     rules.splice(insertIndex, 0, ...customRules);
@@ -517,15 +546,12 @@ function buildRuleSetRule(item) {
 // =============================================================================
 // 3) 规则与规则集（rule-providers + rules）
 // -----------------------------------------------------------------------------
-// - 标准远程规则组统一由 REMOTE_RULESETS 管理：
-//   * rule-provider 地址
-//   * RULE-SET 顺序
-//   * 默认策略语义（供 proxy-group 复用）
-// - RULES_SKELETON 继续独立保留：
-//   * LAN 本地硬编码保护
-//   * 国内兜底
-//   * MATCH 最终兜底
-// - CUSTOM_RULE_GROUPS 不参与这里的远程规则生成，它仍由 addCustomRules() 插入
+// - 这里负责输出“真实 rules + rule-providers”，属于实际规则层，不是显示层。
+// - REMOTE_RULESETS 在这里决定的是远程 RULE-SET 的真实生成顺序，也就是实际匹配顺序的一部分。
+// - RULES_SKELETON 在这里提供 LAN 本地硬编码保护、国内兜底、MATCH 最终兜底。
+// - CUSTOM_RULE_GROUPS 不参与这里的远程规则生成，它会在 addCustomRules() 中插回到第一条 RULE-SET 之前。
+// - 最终完整匹配骨架为：
+//   LAN 本地硬编码保护 -> 本地自定义规则 -> 远程规则集 -> 国内兜底 -> MATCH
 // =============================================================================
 function overwriteRules(config) {
   const generatedProviders = Object.fromEntries(
@@ -535,7 +561,8 @@ function overwriteRules(config) {
     ])
   );
 
-  // 远程 RULE-SET 引用：严格按 REMOTE_RULESETS 的数组顺序生成
+  // 远程 RULE-SET 引用：严格按 REMOTE_RULESETS 的数组顺序生成。
+  // 这里的顺序会进入真实 rules，因此会影响实际匹配优先级，不是单纯展示顺序。
   // 注意：LAN 仍然写死 DIRECT，避免误操作导致内网流量绕路；
   // 其余远程规则组继续指向各自同名 proxy-group，保持原语义不变。
   const remoteRuleSetRules = REMOTE_RULESETS.map((item) => buildRuleSetRule(item));
@@ -555,6 +582,7 @@ function overwriteRules(config) {
   };
 
   // 覆写 rules 为本脚本生成的版本（确保规则顺序可控）
+  // 维护提示：真正进入内核执行的是这里写回的 rules，不是 proxy-groups 的显示顺序。
   config["rules"] = optimizedRules;
 }
 
@@ -601,6 +629,10 @@ function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabl
 // =============================================================================
 // 4) 策略组（proxy-groups）生成
 // -----------------------------------------------------------------------------
+// 说明：
+// - 这里生成的是 UI 中看到的策略组与候选项，属于“显示层 / 交互层”。
+// - 它不负责真实 rules 的执行顺序；不要把 proxy-groups 的顺序误认为 rules 的匹配顺序。
+// - 这里同样会读取远程规则组信息，但只用于生成可选策略组，不改写 overwriteRules() 的实际匹配顺序。
 // 生成内容：
 // - 地区测速组：按正则从节点名筛选香港/新加坡/日本/美国（默认排除手动节点）
 // - 🌏 Auto：对普通节点做 url-test（手动节点永不参与测速）
@@ -703,7 +735,9 @@ function overwriteProxyGroups(config) {
 
   // 标准远程规则组：
   // - 元数据继续来自 REMOTE_RULESETS
-  // - 显示顺序改由 REMOTE_RULESET_DISPLAY_ORDER 控制
+  // - 但这里的显示顺序明确由 REMOTE_RULESET_DISPLAY_ORDER 控制
+  // - 这里只影响 UI 展示，不影响 overwriteRules() 中远程 RULE-SET 的真实匹配顺序
+  // 维护提示：不要把这里生成出来的 proxy-groups 顺序误认为 rules 的执行顺序。
   // 注意：各规则组只注入 relay（若启用），不注入手动节点本体
   const remoteRuleSetMap = Object.fromEntries(REMOTE_RULESETS.map((item) => [item.name, item]));
   const ruleSetProxyGroups = REMOTE_RULESET_DISPLAY_ORDER
