@@ -807,7 +807,7 @@ function overwriteDns(config) {
   const dnsOptions = {
     "enable": true,
     "ipv6": false,
-    "prefer-h3": true,
+    "prefer-h3": false,
 
     // fake-ip：配合 sniffer / 规则，可减少 DNS 污染与泄露风险
     "enhanced-mode": "fake-ip",
