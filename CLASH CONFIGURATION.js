@@ -203,6 +203,26 @@ const REMOTE_RULESETS = [
   },
 ];
 
+// ===================== 远程规则本地锁定名单 =====================
+// 说明：
+// - 这里只写 REMOTE_RULESETS 中的规则库名称；被列入后将优先读取本地缓存文件。
+// - 仅对 REMOTE_RULESETS 中实际存在的名称生效；不存在的名称会自动忽略。
+// - 本地文件路径仍然复用 provider 默认 path 逻辑，不额外新增自定义路径入口。
+// 用法：
+// - 把规则库 name 写进这里，就会停止远程更新，改读本地已缓存文件。
+// - name 必须和 REMOTE_RULESETS 里的 name 完全一致；写错会被自动忽略。
+// - 不用写路径，脚本会继续用原来的 ./ruleset/${name}.yaml。
+// - 加入前请先让规则库成功更新过一次；脚本不会帮你翻冰箱确认有没有存货。
+// - 想更新已锁定规则库：先从名单移除，更新完成后再加回来。
+//
+// 示例：const LOCAL_RULESET_LOCK_NAMES = ["OpenAI", "Grok"];
+const LOCAL_RULESET_LOCK_NAMES = [];
+const LOCAL_RULESET_LOCK_NAME_SET = new Set(
+  LOCAL_RULESET_LOCK_NAMES.filter((name) =>
+    REMOTE_RULESETS.some((item) => item.name === name)
+  )
+);
+
 // ===================== 远程规则组显示顺序（仅影响 UI） =====================
 // 说明：
 // - 这里只控制 proxy-groups 中“标准远程规则组”的显示顺序，属于“显示层调整”。
@@ -526,14 +546,31 @@ function addCustomRules(config) {
 // - 如果未来某个远程规则组需要单独指定 behavior / format / interval / path，
 //   只需要在对应项上填写；未填写时保持当前默认值不变
 // =============================================================================
+function isLocalRulesetLocked(item) {
+  return !!(item && LOCAL_RULESET_LOCK_NAME_SET.has(item.name));
+}
+
 function getRemoteRulesetProviderConfig(item) {
+  const behavior = item.behavior !== undefined ? item.behavior : "classical";
+  const path = item.path !== undefined ? item.path : `./ruleset/${item.name}.yaml`;
+  const format = item.format !== undefined ? item.format : "yaml";
+
+  if (isLocalRulesetLocked(item)) {
+    return {
+      type: "file",
+      behavior,
+      path,
+      format,
+    };
+  }
+
   return {
     type: "http", // 远程拉取
-    behavior: item.behavior !== undefined ? item.behavior : "classical",
+    behavior,
     url: item.url,
-    path: item.path !== undefined ? item.path : `./ruleset/${item.name}.yaml`,
+    path,
     interval: item.interval !== undefined ? item.interval : 86400,
-    format: item.format !== undefined ? item.format : "yaml",
+    format,
   };
 }
 
