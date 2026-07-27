@@ -24,6 +24,11 @@ const trustDnsList = [
   "https://8.8.4.4/dns-query",
 ];
 
+// 私有域名 DNS：用于解析局域网、家庭或公司内部自定义域名。
+// 默认留空，不改变现有 DNS 行为；需要时可填写路由器或内部 DNS。
+// 示例：const PRIVATE_DNS_LIST = ["192.168.1.1"];
+const PRIVATE_DNS_LIST = [];
+
 // 手动节点（链式代理出口）
 // 普通订阅节点作为入口，MANUAL_PROXIES 注入 config.proxies 后作为出口。
 // 新版 mihomo 不使用 relay；手动节点通过 dialer-proxy 指向入口组。
@@ -720,11 +725,26 @@ function overwriteDns(config) {
     // 代理服务器域名使用国内 DoH。
     "proxy-server-nameserver": cnDnsList,
 
+    // 未被 nameserver-policy 明确分类、最终走 DIRECT 的域名使用国内 DoH。
+    // nameserver-policy 仍具有更高优先级。
+    "direct-nameserver": cnDnsList,
+    "direct-nameserver-follow-policy": true,
+
     // 解析遵循分流规则。
     "respect-rules": true,
 
     // 国内域名用国内加密 DNS，其他域名用可信 DoH。
     "nameserver-policy": {
+      // 仅在用户配置私有 DNS 时启用，不影响默认行为。
+      ...(Array.isArray(PRIVATE_DNS_LIST) && PRIVATE_DNS_LIST.length > 0
+        ? {
+            "geosite:private": PRIVATE_DNS_LIST,
+            "+.lan": PRIVATE_DNS_LIST,
+            "+.local": PRIVATE_DNS_LIST,
+            "+.home.arpa": PRIVATE_DNS_LIST,
+          }
+        : {}),
+
       "geosite:cn": cnDnsList,
       "geosite:geolocation-!cn": trustDnsList,
     },
