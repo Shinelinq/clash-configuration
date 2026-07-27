@@ -43,13 +43,13 @@ const trustDnsList = [
 // - 本脚本的链式代理设计：
 //   * 机场/订阅节点作为“入口（Entry）”或普通出口（normalProxies）
 //   * 手动节点作为“出口（Exit）”
-// - 注意：链式体系中不允许手动节点携带 dialer-proxy：
-//   入口应由 UI 控制，脚本会强制清洗 dialer-proxy 字段。
+// - 注意：新版 mihomo / Clash Party 已移除 relay，链式代理改用 dialer-proxy：
+//   手动节点会被自动写入 dialer-proxy: CHAIN_ENTRY_GROUP_NAME。
 // - 链式体系启用条件（硬规则）：
 //   “最终成功注入的手动节点数量 > 0” 时才生成链式相关策略组，避免空组污染界面。
 const MANUAL_RENAME_SUFFIX = " (Manual)";
 
-// 你的手动节点列表：为空则完全不启用链式代理体系（入口/出口/relay 都不生成）
+// 你的手动节点列表：为空则完全不启用链式代理体系（入口/出口/链式代理组都不生成）
 // 示例（请自行填写 server/port/账号等）：
 // const MANUAL_PROXIES = [
   // ---- 模板：trojan ----
@@ -86,10 +86,10 @@ const MANUAL_RENAME_SUFFIX = " (Manual)";
 // ];
 const MANUAL_PROXIES = [];
 
-// ===================== 链式代理（relay）分组命名 =====================
+// ===================== 链式代理（dialer-proxy）分组命名 =====================
 // - CHAIN_ENTRY_GROUP_NAME：链路入口（中转节点）：Auto + 普通节点 + DIRECT
 // - CHAIN_EXIT_GROUP_NAME：链路出口（手动添加）：仅手动节点（不含 DIRECT，语义更纯）
-// - CHAIN_RELAY_GROUP_NAME：链式代理（relay）：引用“入口组 + 出口组”
+// - CHAIN_RELAY_GROUP_NAME：链式代理总开关（select）：指向出口组；出口节点通过 dialer-proxy 使用入口组拨号
 const CHAIN_ENTRY_GROUP_NAME = "链路入口（中转节点）";
 const CHAIN_EXIT_GROUP_NAME = "链路出口（手动添加）";
 const CHAIN_RELAY_GROUP_NAME = "📡 链式代理";
@@ -435,7 +435,7 @@ function main(config) {
     // 记录最终注入成功的手动节点名（用于后续分层：manual vs normal）
     const manualNames = [];
 
-    // 注入手动节点：处理撞名 + 强制清洗 dialer-proxy + 最小校验
+    // 注入手动节点：处理撞名 + 强制写入 dialer-proxy + 最小校验
     if (Array.isArray(MANUAL_PROXIES) && MANUAL_PROXIES.length > 0) {
       const existingNames = new Set(getAllProxyNames(config));
 
@@ -444,11 +444,6 @@ function main(config) {
 
         // 复制一份，避免外部常量被意外改动
         const p = { ...raw };
-
-        // 强制清洗：链式方案中不允许 dialer-proxy（入口由 UI 控制）
-        if ("dialer-proxy" in p) {
-          try { delete p["dialer-proxy"]; } catch (_) { p["dialer-proxy"] = undefined; }
-        }
 
         // 撞名消解：仅对手动节点生效、一次性稳定改名
         let finalName = String(p.name);
@@ -462,6 +457,10 @@ function main(config) {
           finalName = candidate;
           p.name = finalName;
         }
+
+        // 新版 mihomo 已移除 relay。链式出口节点通过 dialer-proxy 指向入口组，
+        // 入口组仍由 UI 选择：Auto / 普通节点 / DIRECT。
+        p["dialer-proxy"] = CHAIN_ENTRY_GROUP_NAME;
 
         existingNames.add(finalName);
         manualNames.push(finalName);
@@ -680,12 +679,12 @@ function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabl
 // 生成内容：
 // - 地区测速组：按正则从普通节点中筛选香港/新加坡/日本/美国（仅 normalProxies 存在时生成）
 // - 🌏 Auto：对普通节点做 url-test（仅 normalProxies 存在时生成，手动节点永不参与测速）
-// - 链式代理（relay）：仅当手动出口节点注入成功后生成
+// - 链式代理（dialer-proxy）：仅当手动出口节点注入成功后生成
 //   * 链路入口：有普通节点时为「🌏 Auto + normalProxies + DIRECT」；仅手动节点时退化为「DIRECT」
-//   * 链路出口：仅手动节点
-//   * 📡 链式代理：relay(入口组, 出口组)
-// - 总出口 Proxy：有普通节点时为「Auto -> (可选 chain relay) -> 地区组 -> normalProxies -> DIRECT」
-//                  仅手动节点时为「(可选 chain relay) -> DIRECT」
+//   * 链路出口：仅手动节点；每个手动节点都会带 dialer-proxy 指向链路入口
+//   * 📡 链式代理：普通 select 组，不再使用已被移除的 relay 类型
+// - 总出口 Proxy：有普通节点时为「Auto -> (可选链式代理) -> 地区组 -> normalProxies -> DIRECT」
+//                  仅手动节点时为「(可选链式代理) -> DIRECT」
 // - 规则组：
 //   * 标准远程规则组：按 REMOTE_RULESET_DISPLAY_ORDER 控制显示顺序
 //   * 本地自定义规则组：按 CUSTOM_RULE_GROUPS 默认策略生成 select 组
@@ -743,7 +742,7 @@ function overwriteProxyGroups(config) {
       }
     : null;
 
-  // ---------------- 链式代理三件套（仅 chainEnabled 时生成） ----------------
+  // ---------------- 链式代理三件套（仅 chainEnabled 时生成；兼容 Clash Party / 新版 mihomo） ----------------
   const chainEntryGroup = chainEnabled
     ? {
         name: CHAIN_ENTRY_GROUP_NAME,
@@ -764,14 +763,16 @@ function overwriteProxyGroups(config) {
   const chainRelayGroup = chainEnabled
     ? {
         name: CHAIN_RELAY_GROUP_NAME,
-        type: "relay",
-        proxies: [CHAIN_ENTRY_GROUP_NAME, CHAIN_EXIT_GROUP_NAME],
+        type: "select",
+        // 不再使用 type: relay。
+        // 实际链路由“手动出口节点上的 dialer-proxy -> 链路入口组”完成。
+        proxies: [CHAIN_EXIT_GROUP_NAME],
       }
     : null;
 
   // 总出口组：你最终手动选择的入口
-  // 候选顺序：Auto -> (链式 relay 可选) -> 地区组 -> normalProxies -> DIRECT
-  // 注意：这里绝不放手动节点本体（手动节点只在链式出口组里出现）
+  // 候选顺序：Auto -> (链式代理可选) -> 地区组 -> normalProxies -> DIRECT
+  // 注意：这里绝不放手动节点本体（手动节点只在链式出口组里出现，并通过 dialer-proxy 使用入口组）
   const proxyGroup = {
     name: PROXY_NAME,
     type: "select",
@@ -789,7 +790,7 @@ function overwriteProxyGroups(config) {
   // - 但这里的显示顺序明确由 REMOTE_RULESET_DISPLAY_ORDER 控制
   // - 这里只影响 UI 展示，不影响 overwriteRules() 中远程 RULE-SET 的真实匹配顺序
   // 维护提示：不要把这里生成出来的 proxy-groups 顺序误认为 rules 的执行顺序。
-  // 注意：各规则组只注入 relay（若启用），不注入手动节点本体
+  // 注意：各规则组只注入链式代理总开关（若启用），不注入手动节点本体
   const remoteRuleSetMap = Object.fromEntries(REMOTE_RULESETS.map((item) => [item.name, item]));
   const ruleSetProxyGroups = REMOTE_RULESET_DISPLAY_ORDER
     .map((name) => remoteRuleSetMap[name])
