@@ -10,10 +10,10 @@ const TEST_URL = "https://cp.cloudflare.com/generate_204";
 const TEST_INTERVAL = 600;
 const TEST_TOLERANCE = 50;
 
-// 国内 DNS：用于处理国内域名解析，避免绕路/解析慢
+// 国内 DoH：用于国内域名的加密解析。
 const cnDnsList = [
-  "223.5.5.5", "223.6.6.6",
-  "119.29.29.29", "119.28.28.28",
+  "https://223.5.5.5/dns-query",
+  "https://1.12.12.12/dns-query",
 ];
 
 // 可信 DoH：用于国际域名解析，降低污染概率
@@ -664,7 +664,7 @@ function overwriteProxyGroups(config) {
 
 
 // 5) DNS 与高级选项
-// fake-ip + respect-rules 使解析与分流一致；国内域名及代理服务器优先使用国内 DNS，
+// fake-ip + respect-rules 使解析与分流一致；国内域名及代理服务器使用国内 DoH，
 // 其他域名使用可信 DoH，以减少绕路、泄露和污染。
 function overwriteDns(config) {
   const dnsOptions = {
@@ -711,19 +711,19 @@ function overwriteDns(config) {
       "+.nip.io",
     ],
 
-    // DoH bootstrap。
-    "default-nameserver": ["223.5.5.5", "119.29.29.29"],
+    // 负责 DoH 初始化和基础解析。
+    "default-nameserver": cnDnsList,
 
     // 可信 DoH。
     "nameserver": trustDnsList,
 
-    // 代理服务器域名使用国内 DNS。
+    // 代理服务器域名使用国内 DoH。
     "proxy-server-nameserver": cnDnsList,
 
     // 解析遵循分流规则。
     "respect-rules": true,
 
-    // 国内域名用国内 DNS，其他域名用可信 DoH。
+    // 国内域名用国内加密 DNS，其他域名用可信 DoH。
     "nameserver-policy": {
       "geosite:cn": cnDnsList,
       "geosite:geolocation-!cn": trustDnsList,
