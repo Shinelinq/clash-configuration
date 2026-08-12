@@ -93,80 +93,108 @@ const REMOTE_RULESETS = [
   {
     name: "LAN",
     policy: "DIRECT",
+    behavior: "classical",
+    format: "yaml",
     url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Lan/Lan_No_Resolve.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/WiFi.png",
   },
   {
     name: "广告拦截",
     policy: "REJECT",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AdvertisingLite/AdvertisingLite_Classical_No_Resolve.yaml",
+    behavior: "domain",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/privacy-protection-tools/anti-AD@master/anti-ad-clash.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Reject.png",
   },
   {
     name: "OpenAI",
     policy: "PROXY",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OpenAI/OpenAI_No_Resolve.yaml",
+    behavior: "domain",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/openai.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ChatGPT.png",
   },
   {
     name: "Gemini",
     policy: "PROXY",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Gemini/Gemini_No_Resolve.yaml",
+    behavior: "classical",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/VPSDance/ai-proxy-rules@main/rules/clash/google-ai.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/AI.png",
   },
   {
     name: "Grok",
     policy: "PROXY",
-    url: "https://cdn.jsdelivr.net/gh/Accademia/Additional_Rule_For_Clash@main/Grok/Grok_No_Resolve.yaml",
+    behavior: "classical",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/VPSDance/ai-proxy-rules@main/rules/clash/x-ai.yaml",
     icon: "https://x.ai/favicon.ico",
   },
   {
     name: "Claude",
     policy: "PROXY",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Claude/Claude_No_Resolve.yaml",
+    behavior: "classical",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/VPSDance/ai-proxy-rules@main/rules/clash/anthropic.yaml",
     icon: "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-png@latest/light/claude-color.png",
   },
   {
     name: "GitHub",
     policy: "PROXY",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GitHub/GitHub_No_Resolve.yaml",
+    behavior: "domain",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/github.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/GitHub.png",
   },
   {
     name: "Google",
     policy: "PROXY",
+    behavior: "classical",
+    format: "yaml",
     url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Google/Google_No_Resolve.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Google.png",
   },
   {
     name: "PayPal",
     policy: "PROXY",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/PayPal/PayPal_No_Resolve.yaml",
+    behavior: "domain",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/paypal.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/PayPal.png",
   },
   {
     name: "SteamCN",
     policy: "DIRECT",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/SteamCN/SteamCN_No_Resolve.yaml",
+    behavior: "domain",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam%40cn.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png",
   },
   {
     name: "Steam",
     policy: "PROXY",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Steam/Steam_No_Resolve.yaml",
+    behavior: "domain",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/steam.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Steam.png",
   },
   {
     name: "全球媒体",
     policy: "PROXY",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml",
+    behavior: "classical",
+    format: "text",
+    path: "./ruleset/全球媒体.txt",
+    url: "https://ruleset.skk.moe/Clash/non_ip/stream.txt",
     // Qure Color 里没有 GlobalMedia.png，因此“全球媒体”使用 ForeignMedia 图标
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ForeignMedia.png",
   },
   {
     name: "国内网站",
     policy: "DIRECT",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/ChinaMax/ChinaMax_Classical_No_IPv6_No_Resolve.yaml",
+    behavior: "classical",
+    format: "text",
+    path: "./ruleset/国内网站.txt",
+    url: "https://ruleset.skk.moe/Clash/non_ip/domestic.txt",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/China.png",
   },
 ];
@@ -495,10 +523,7 @@ function overwriteRules(config) {
     ...RULES_SKELETON.finalFallback,
   ];
 
-  config["rule-providers"] = {
-    ...(config["rule-providers"] || {}),
-    ...generatedProviders,
-  };
+  config["rule-providers"] = generatedProviders;
 
   config["rules"] = optimizedRules;
 }
@@ -760,11 +785,13 @@ function overwriteMiscOptions(config) {
     "geoip": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip-lite.dat",
     "geosite": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat",
     "mmdb": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country-lite.mmdb",
+    "asn": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb",
   };
 
   const otherOptions = {
     "unified-delay": true,
     "tcp-concurrent": true,
+    "find-process-mode": "strict",
     "profile": { "store-selected": true, "store-fake-ip": true },
 
     // 嗅探 SNI/HTTP Host，配合 fake-ip。
