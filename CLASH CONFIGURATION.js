@@ -109,9 +109,9 @@ const REMOTE_RULESETS = [
   {
     name: "OpenAI",
     policy: "PROXY",
-    behavior: "domain",
+    behavior: "classical",
     format: "yaml",
-    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/openai.yaml",
+    url: "https://cdn.jsdelivr.net/gh/VPSDance/ai-proxy-rules@main/rules/clash/openai.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ChatGPT.png",
   },
   {
