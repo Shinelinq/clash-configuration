@@ -72,8 +72,14 @@ const MANUAL_RENAME_SUFFIX = " (Manual)";
 // ];
 const MANUAL_PROXIES = [];
 
+// 自建固定节点（普通独立节点）
+// 注入时统一添加固定前缀；不设置 dialer-proxy，也不参与订阅节点测速。
+const CUSTOM_PROXY_NAME_PREFIX = "自建｜";
+const CUSTOM_PROXY_GROUP_NAME = "📌 自建节点";
+const CUSTOM_PROXIES = [];
+
 // 链式代理（dialer-proxy）分组名
-// - CHAIN_ENTRY_GROUP_NAME：链路入口（中转节点）：Auto + 普通节点 + DIRECT
+// - CHAIN_ENTRY_GROUP_NAME：链路入口（中转节点）：Auto + 自建节点组 + 普通节点 + DIRECT
 // - CHAIN_EXIT_GROUP_NAME：链路出口：仅手动节点，不含 DIRECT
 // - CHAIN_RELAY_GROUP_NAME：链式代理总开关（select）：指向出口组；出口节点通过 dialer-proxy 使用入口组拨号
 const CHAIN_ENTRY_GROUP_NAME = "链路入口（中转节点）";
@@ -354,6 +360,16 @@ function isValidManualProxy(raw) {
   return true;
 }
 
+// 自建节点仅校验必要字段，避免协议差异被过度校验误伤。
+function isValidCustomProxy(raw) {
+  if (!raw || typeof raw !== "object") return false;
+  if (!raw.name) return false;
+  if (!raw.type) return false;
+  if (!raw.server) return false;
+  if (raw.port === undefined || raw.port === null || raw.port === "") return false;
+  return true;
+}
+
 // 主入口：生成真实规则、UI 策略组、DNS 和高级选项。
 // addCustomRules() 虽最后调用，仍会把本地规则插入第一条远程 RULE-SET 前。
 // 任何异常均回退到原始配置。
@@ -403,20 +419,54 @@ function main(config) {
       }
     }
 
+    // B. 注入自建固定节点。
+    const customNames = [];
+
+    if (Array.isArray(CUSTOM_PROXIES) && CUSTOM_PROXIES.length > 0) {
+      const existingNames = new Set(getAllProxyNames(config));
+
+      for (const raw of CUSTOM_PROXIES) {
+        if (!isValidCustomProxy(raw)) continue;
+
+        const p = { ...raw };
+        const rawName = String(p.name);
+        const baseName = rawName.startsWith(CUSTOM_PROXY_NAME_PREFIX)
+          ? rawName
+          : CUSTOM_PROXY_NAME_PREFIX + rawName;
+
+        // 自建节点撞名时稳定追加递增后缀。
+        let finalName = baseName;
+        let i = 1;
+        while (existingNames.has(finalName)) {
+          i += 1;
+          finalName = `${baseName}-${i}`;
+        }
+
+        p.name = finalName;
+        delete p["dialer-proxy"];
+
+        existingNames.add(finalName);
+        customNames.push(finalName);
+        config.proxies.push(p);
+      }
+    }
+
     // 临时字段供节点分层、测速排除和链式组生成使用。
     config._manualProxyNames = manualNames;
+    config._customProxyNames = customNames;
 
-    // B. 收集全部节点名。
+    // C. 收集全部节点名。
     const allProxies = getAllProxyNames(config);
 
     if (!allProxies.length) {
       delete config._manualProxyNames;
+      delete config._customProxyNames;
       return config;
     }
 
     config._allProxyNames = allProxies;
 
-    // C. 按既定顺序加工配置。
+    // D. 按既定顺序加工配置。
     overwriteRules(config);
     overwriteProxyGroups(config);
     overwriteDns(config);
@@ -426,6 +476,7 @@ function main(config) {
     // 清理内部临时字段。
     delete config._allProxyNames;
     delete config._manualProxyNames;
+    delete config._customProxyNames;
 
     return config;
 
@@ -434,6 +485,7 @@ function main(config) {
     try {
       delete backup._allProxyNames;
       delete backup._manualProxyNames;
+      delete backup._customProxyNames;
     } catch (_) {}
     return backup;
   }
@@ -529,7 +581,7 @@ function overwriteRules(config) {
 }
 
 // 按 DIRECT / PROXY / REJECT 语义生成候选项；LAN 仅允许 DIRECT。
-function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabled) {
+function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabled, customEnabled) {
   if (groupName === "LAN") {
     return ["DIRECT"];
   }
@@ -539,6 +591,7 @@ function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabl
       "DIRECT",
       PROXY_NAME,
       ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+      ...(customEnabled ? [CUSTOM_PROXY_GROUP_NAME] : []),
       ...regionGroupNames,
     ];
   }
@@ -549,6 +602,7 @@ function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabl
       "DIRECT",
       PROXY_NAME,
       ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+      ...(customEnabled ? [CUSTOM_PROXY_GROUP_NAME] : []),
       ...regionGroupNames,
     ];
   }
@@ -556,6 +610,7 @@ function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabl
   return [
     PROXY_NAME,
     ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
+    ...(customEnabled ? [CUSTOM_PROXY_GROUP_NAME] : []),
     ...regionGroupNames,
     "DIRECT",
   ];
@@ -563,8 +618,8 @@ function buildPolicyGroupProxies(groupName, policy, regionGroupNames, chainEnabl
 
 
 // 4) UI 策略组
-// Auto 和地区测速仅使用普通节点，手动节点不参与；链式组仅在手动出口成功注入时生成。
-// 链路入口为 Auto/普通节点/DIRECT，链路出口仅含手动节点并通过 dialer-proxy 拨号。
+// Auto 和地区测速仅使用订阅节点，自建及手动节点不参与；链式组仅在手动出口成功注入时生成。
+// 链路入口为 Auto/自建节点组/订阅节点/DIRECT，链路出口仅含手动节点并通过 dialer-proxy 拨号。
 // 标准远程组按 REMOTE_RULESET_DISPLAY_ORDER 显示；此处顺序不等于 rules 匹配顺序。
 function overwriteProxyGroups(config) {
   // 优先使用 main() 预收集结果。
@@ -572,16 +627,20 @@ function overwriteProxyGroups(config) {
 
   const manualNames = Array.isArray(config._manualProxyNames) ? config._manualProxyNames : [];
   const manualSet = new Set(manualNames);
+  const customNames = Array.isArray(config._customProxyNames) ? config._customProxyNames : [];
+  const customSet = new Set(customNames);
 
   const manualProxies = allProxies.filter(n => manualSet.has(n));
-  const normalProxies = allProxies.filter(n => !manualSet.has(n));
-  const hasNormalProxies = normalProxies.length > 0;
+  const customProxies = allProxies.filter(n => customSet.has(n));
+  const subscriptionProxies = allProxies.filter(n => !manualSet.has(n) && !customSet.has(n));
+  const hasSubscriptionProxies = subscriptionProxies.length > 0;
+  const hasCustomProxies = customProxies.length > 0;
   const hasManualProxies = manualProxies.length > 0;
 
   const chainEnabled = hasManualProxies;
 
-  // 地区测速组仅使用普通节点；空组不生成。
-  const regionProxyGroups = hasNormalProxies
+  // 地区测速组仅使用订阅节点；空组不生成。
+  const regionProxyGroups = hasSubscriptionProxies
     ? regionFilterRegexs
         .map((item) => {
           const proxies = getProxiesByRegex(config, item.regex);
@@ -600,16 +659,24 @@ function overwriteProxyGroups(config) {
 
   const regionGroupNames = regionProxyGroups.map((g) => g.name);
 
-  // Auto 仅使用普通节点。
-  const autoSelect = hasNormalProxies
+  // Auto 仅使用订阅节点。
+  const autoSelect = hasSubscriptionProxies
     ? {
         name: "🌏 Auto",
         type: "url-test",
         url: TEST_URL,
         interval: TEST_INTERVAL,
         tolerance: TEST_TOLERANCE,
-        proxies: [...normalProxies],
+        proxies: [...subscriptionProxies],
         lazy: true,
+      }
+    : null;
+
+  const customProxyGroup = hasCustomProxies
+    ? {
+        name: CUSTOM_PROXY_GROUP_NAME,
+        type: "select",
+        proxies: [...customProxies],
       }
     : null;
 
@@ -618,7 +685,12 @@ function overwriteProxyGroups(config) {
     ? {
         name: CHAIN_ENTRY_GROUP_NAME,
         type: "select",
-        proxies: hasNormalProxies ? ["🌏 Auto", ...normalProxies, "DIRECT"] : ["DIRECT"],
+        proxies: [
+          ...(hasSubscriptionProxies ? ["🌏 Auto"] : []),
+          ...(hasCustomProxies ? [CUSTOM_PROXY_GROUP_NAME] : []),
+          ...subscriptionProxies,
+          "DIRECT",
+        ],
       }
     : null;
 
@@ -645,10 +717,10 @@ function overwriteProxyGroups(config) {
     name: PROXY_NAME,
     type: "select",
     proxies: [
-      ...(hasNormalProxies ? ["🌏 Auto"] : []),
+      ...(hasSubscriptionProxies ? ["🌏 Auto"] : []),
       ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
-      ...(hasNormalProxies ? regionGroupNames : []),
-      ...normalProxies,
+      ...(hasSubscriptionProxies ? regionGroupNames : []),
+      ...subscriptionProxies,
       "DIRECT",
     ],
   };
@@ -661,7 +733,7 @@ function overwriteProxyGroups(config) {
     .map((item) => ({
       name: item.name,
       type: "select",
-      proxies: buildPolicyGroupProxies(item.name, item.policy, regionGroupNames, chainEnabled),
+      proxies: buildPolicyGroupProxies(item.name, item.policy, regionGroupNames, chainEnabled, hasCustomProxies),
     }));
 
   const customRuleProxyGroups = Object.keys(CUSTOM_RULE_GROUPS).map((ruleSetName) => {
@@ -670,13 +742,14 @@ function overwriteProxyGroups(config) {
     return {
       name: ruleSetName,
       type: "select",
-      proxies: buildPolicyGroupProxies(ruleSetName, defaultStrategy, regionGroupNames, chainEnabled),
+      proxies: buildPolicyGroupProxies(ruleSetName, defaultStrategy, regionGroupNames, chainEnabled, hasCustomProxies),
     };
   });
 
   config["proxy-groups"] = [
     proxyGroup,
     autoSelect,
+    customProxyGroup,
     ...(chainEnabled ? [chainEntryGroup, chainExitGroup, chainRelayGroup] : []),
     ...ruleSetProxyGroups,
     ...customRuleProxyGroups,
@@ -822,14 +895,16 @@ function overwriteMiscOptions(config) {
 }
 
 
-// 按正则筛选普通节点；手动出口不参与地区或 Auto 测速。
+// 按正则筛选订阅节点；自建及手动节点不参与地区或 Auto 测速。
 function getProxiesByRegex(config, regex) {
   const names = config._allProxyNames || (config.proxies || []).map((e) => e.name);
   const manualNames = Array.isArray(config._manualProxyNames) ? config._manualProxyNames : [];
   const manualSet = new Set(manualNames);
+  const customNames = Array.isArray(config._customProxyNames) ? config._customProxyNames : [];
+  const customSet = new Set(customNames);
 
-  const base = manualNames.length > 0
-    ? names.filter(n => !manualSet.has(n))
+  const base = manualNames.length > 0 || customNames.length > 0
+    ? names.filter(n => !manualSet.has(n) && !customSet.has(n))
     : names;
 
   return base.filter((name) => regex.test(name));
