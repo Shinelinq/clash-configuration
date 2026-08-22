@@ -76,10 +76,11 @@ const MANUAL_PROXIES = [];
 // 注入时统一添加固定前缀；不设置 dialer-proxy，也不参与订阅节点测速。
 const CUSTOM_PROXY_NAME_PREFIX = "自建｜";
 const CUSTOM_PROXY_GROUP_NAME = "📌 自建节点";
+const CUSTOM_TRANSIT_GROUP_NAME = "🚀 自建中转";
 const CUSTOM_PROXIES = [];
 
 // 链式代理（dialer-proxy）分组名
-// - CHAIN_ENTRY_GROUP_NAME：链路入口（中转节点）：Auto + 自建节点组 + 普通节点 + DIRECT
+// - CHAIN_ENTRY_GROUP_NAME：链路入口（中转节点）：Auto + 自建中转组 + 普通节点 + DIRECT
 // - CHAIN_EXIT_GROUP_NAME：链路出口：仅手动节点，不含 DIRECT
 // - CHAIN_RELAY_GROUP_NAME：链式代理总开关（select）：指向出口组；出口节点通过 dialer-proxy 使用入口组拨号
 const CHAIN_ENTRY_GROUP_NAME = "链路入口（中转节点）";
@@ -266,10 +267,12 @@ const GROUP_ICONS = {
   // 总出口与自动测速组
   "Proxy": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Proxy.png",
   "🌏 Auto": "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Auto.png",
+  [CUSTOM_PROXY_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Server.png",
+  [CUSTOM_TRANSIT_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Stack.png",
 
   // 链式代理相关
   [CHAIN_ENTRY_GROUP_NAME]: "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Rocket.png",
-  [CHAIN_EXIT_GROUP_NAME]: "https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Server.png",
+  [CHAIN_EXIT_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Final.png",
   [CHAIN_RELAY_GROUP_NAME]: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Loop.png",
 
   // 地区测速组（必须与 regionProxyGroups 的 name 完全一致）
@@ -680,6 +683,14 @@ function overwriteProxyGroups(config) {
       }
     : null;
 
+  const customTransitGroup = chainEnabled && hasCustomProxies
+    ? {
+        name: CUSTOM_TRANSIT_GROUP_NAME,
+        type: "select",
+        proxies: [...customProxies],
+      }
+    : null;
+
   // 链式代理三组，仅 chainEnabled 时生成。
   const chainEntryGroup = chainEnabled
     ? {
@@ -687,7 +698,7 @@ function overwriteProxyGroups(config) {
         type: "select",
         proxies: [
           ...(hasSubscriptionProxies ? ["🌏 Auto"] : []),
-          ...(hasCustomProxies ? [CUSTOM_PROXY_GROUP_NAME] : []),
+          ...(hasCustomProxies ? [CUSTOM_TRANSIT_GROUP_NAME] : []),
           ...subscriptionProxies,
           "DIRECT",
         ],
@@ -711,13 +722,14 @@ function overwriteProxyGroups(config) {
       }
     : null;
 
-  // 总出口候选顺序：Auto -> 链式代理 -> 地区组 -> 普通节点 -> DIRECT。
+  // 总出口候选顺序：Auto -> 自建节点 -> 链式代理 -> 地区组 -> 普通节点 -> DIRECT。
   // 手动节点本体只出现在链式出口组。
   const proxyGroup = {
     name: PROXY_NAME,
     type: "select",
     proxies: [
       ...(hasSubscriptionProxies ? ["🌏 Auto"] : []),
+      ...(hasCustomProxies ? [CUSTOM_PROXY_GROUP_NAME] : []),
       ...(chainEnabled ? [CHAIN_RELAY_GROUP_NAME] : []),
       ...(hasSubscriptionProxies ? regionGroupNames : []),
       ...subscriptionProxies,
@@ -750,6 +762,7 @@ function overwriteProxyGroups(config) {
     proxyGroup,
     autoSelect,
     customProxyGroup,
+    customTransitGroup,
     ...(chainEnabled ? [chainEntryGroup, chainExitGroup, chainRelayGroup] : []),
     ...ruleSetProxyGroups,
     ...customRuleProxyGroups,
