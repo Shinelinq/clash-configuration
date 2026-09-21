@@ -79,6 +79,26 @@ const CUSTOM_PROXY_GROUP_NAME = "📌 自建节点";
 const CUSTOM_TRANSIT_GROUP_NAME = "🚀 自建中转";
 const CUSTOM_PROXIES = [];
 
+// 额外普通节点
+// 与订阅节点同级处理，参与 Proxy、Auto 和地区测速。
+// name 无需手动添加 EX|；注入时自动添加。
+// 最终名称撞名时稳定追加 -2、-3、-4……
+const EXTRA_PROXY_NAME_PREFIX = "EX|";
+const EXTRA_PROXIES = [
+  // Shadowsocks 示例
+  // {
+  //   name: "🇭🇰 香港A01",
+  //   server: "服务器域名或IP",
+  //   port: 8388,
+  //   type: "ss",
+  //   cipher: "aes-256-gcm",
+  //   password: "密码",
+  //   udp: true,
+  // },
+
+  // 继续把其他节点对象放在这里
+];
+
 // 链式代理（dialer-proxy）分组名
 // - CHAIN_ENTRY_GROUP_NAME：链路入口（中转节点）：Auto + 自建中转组 + 普通节点 + DIRECT
 // - CHAIN_EXIT_GROUP_NAME：链路出口：仅手动节点，不含 DIRECT
@@ -363,8 +383,9 @@ function isValidManualProxy(raw) {
   return true;
 }
 
-// 自建节点仅校验必要字段，避免协议差异被过度校验误伤。
-function isValidCustomProxy(raw) {
+// 普通独立节点（自建节点与额外节点）仅校验必要字段，
+// 避免协议差异被过度校验误伤。
+function isValidStandaloneProxy(raw) {
   if (!raw || typeof raw !== "object") return false;
   if (!raw.name) return false;
   if (!raw.type) return false;
@@ -429,7 +450,7 @@ function main(config) {
       const existingNames = new Set(getAllProxyNames(config));
 
       for (const raw of CUSTOM_PROXIES) {
-        if (!isValidCustomProxy(raw)) continue;
+        if (!isValidStandaloneProxy(raw)) continue;
 
         const p = { ...raw };
         const rawName = String(p.name);
@@ -454,11 +475,49 @@ function main(config) {
       }
     }
 
+    // C. 注入额外普通节点。
+    // 不记录到 manualNames / customNames，
+    // 因此后续会按普通订阅节点参与 Proxy、Auto 和地区测速。
+    if (Array.isArray(EXTRA_PROXIES) && EXTRA_PROXIES.length > 0) {
+      const existingNames = new Set(getAllProxyNames(config));
+
+      for (const raw of EXTRA_PROXIES) {
+        if (!isValidStandaloneProxy(raw)) continue;
+
+        const p = { ...raw };
+        const rawName = String(p.name);
+
+        // 已经带 EX| 时不重复添加；否则自动添加固定前缀。
+        const baseName = rawName.startsWith(EXTRA_PROXY_NAME_PREFIX)
+          ? rawName
+          : EXTRA_PROXY_NAME_PREFIX + rawName;
+
+        // 按最终名称检查冲突。
+        // 第一次冲突生成 -2，随后依次生成 -3、-4……
+        let finalName = baseName;
+        let i = 1;
+
+        while (existingNames.has(finalName)) {
+          i += 1;
+          finalName = `${baseName}-${i}`;
+        }
+
+        p.name = finalName;
+
+        // 额外节点必须作为普通节点使用，
+        // 避免复制的节点对象意外保留链式拨号字段。
+        delete p["dialer-proxy"];
+
+        existingNames.add(finalName);
+        config.proxies.push(p);
+      }
+    }
+
     // 临时字段供节点分层、测速排除和链式组生成使用。
     config._manualProxyNames = manualNames;
     config._customProxyNames = customNames;
 
-    // C. 收集全部节点名。
+    // D. 收集全部节点名。
     const allProxies = getAllProxyNames(config);
 
     if (!allProxies.length) {
@@ -469,7 +528,7 @@ function main(config) {
 
     config._allProxyNames = allProxies;
 
-    // D. 按既定顺序加工配置。
+    // E. 按既定顺序加工配置。
     overwriteRules(config);
     overwriteProxyGroups(config);
     overwriteDns(config);
