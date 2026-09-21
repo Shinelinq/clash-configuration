@@ -166,20 +166,20 @@ const REMOTE_RULESETS = [
     icon: "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-png@latest/light/claude-color.png",
   },
   {
+    name: "YouTube",
+    policy: "PROXY",
+    behavior: "domain",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/youtube.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/YouTube.png",
+  },
+  {
     name: "GitHub",
     policy: "PROXY",
     behavior: "domain",
     format: "yaml",
     url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/github.yaml",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/GitHub.png",
-  },
-  {
-    name: "Google",
-    policy: "PROXY",
-    behavior: "classical",
-    format: "yaml",
-    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Google/Google_No_Resolve.yaml",
-    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Google.png",
   },
   {
     name: "PayPal",
@@ -215,6 +215,14 @@ const REMOTE_RULESETS = [
     // Qure Color 里没有 GlobalMedia.png，因此“全球媒体”使用 ForeignMedia 图标
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ForeignMedia.png",
   },
+    {
+    name: "Google",
+    policy: "PROXY",
+    behavior: "classical",
+    format: "yaml",
+    url: "https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Google/Google_No_Resolve.yaml",
+    icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Google.png",
+  },
   {
     name: "国内网站",
     policy: "DIRECT",
@@ -249,6 +257,7 @@ const REMOTE_RULESET_DISPLAY_ORDER = [
   "Grok",
   "Claude",
   "Google",
+  "YouTube",
   "GitHub",
   "SteamCN",
   "Steam",
