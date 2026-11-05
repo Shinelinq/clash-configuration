@@ -129,8 +129,9 @@ const REMOTE_RULESETS = [
     name: "广告拦截",
     policy: "REJECT",
     behavior: "domain",
-    format: "yaml",
-    url: "https://cdn.jsdelivr.net/gh/privacy-protection-tools/anti-AD@master/anti-ad-clash.yaml",
+    format: "mrs",
+    path: "./ruleset/广告拦截.mrs",
+    url: "https://cdn.jsdelivr.net/gh/privacy-protection-tools/anti-ad.github.io@master/docs/mihomo.mrs",
     icon: "https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Reject.png",
   },
   {
